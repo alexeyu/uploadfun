@@ -158,6 +158,20 @@ func TestExpandPaths(t *testing.T) {
 	}
 }
 
+func TestExpandPathsRejectsBasenameCollision(t *testing.T) {
+	dirA, dirB := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(dirA, "img.jpg"), "a")
+	writeFile(t, filepath.Join(dirB, "img.jpg"), "b")
+
+	_, err := expandPaths([]string{filepath.Join(dirA, "img.jpg"), filepath.Join(dirB, "img.jpg")})
+	if err == nil {
+		t.Fatal("expected an error when two inputs share a remote basename")
+	}
+	if !strings.Contains(err.Error(), "img.jpg") {
+		t.Errorf("expected the colliding name in the error, got %q", err.Error())
+	}
+}
+
 func TestExpandPathsNonexistent(t *testing.T) {
 	if _, err := expandPaths([]string{"/nonexistent/path/xyz"}); err == nil {
 		t.Fatal("expected an error for a nonexistent path")

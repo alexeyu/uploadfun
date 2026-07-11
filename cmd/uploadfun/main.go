@@ -153,7 +153,29 @@ func expandPaths(paths []string) ([]string, error) {
 			files = append(files, filepath.Join(p, entry.Name()))
 		}
 	}
+	if err := checkBasenameCollisions(files); err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// checkBasenameCollisions rejects inputs that would map to the same remote
+// filename. The remote name is a file's basename (see dispatch's
+// remoteName), so two inputs sharing a basename — e.g. a/img.jpg and
+// b/img.jpg, or the same path passed twice — would, under the default
+// delete-first overwrite, have one silently clobber the other. Catch it up
+// front rather than reporting success for a file that was overwritten.
+func checkBasenameCollisions(files []string) error {
+	seen := make(map[string]string, len(files))
+	for _, f := range files {
+		base := filepath.Base(f)
+		if prev, ok := seen[base]; ok {
+			return fmt.Errorf(
+				"inputs %q and %q both upload to remote name %q", prev, f, base)
+		}
+		seen[base] = f
+	}
+	return nil
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {

@@ -237,6 +237,7 @@ func TestIntegrationFTP(t *testing.T) {
 		Username:       testUser,
 		Password:       testPassword,
 		ConnectTimeout: 10 * time.Second,
+		StallTimeout:   30 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("DialFTP: %v", err)
@@ -253,6 +254,7 @@ func TestIntegrationFTPS(t *testing.T) {
 		Username:       testUser,
 		Password:       testPassword,
 		ConnectTimeout: 10 * time.Second,
+		StallTimeout:   30 * time.Second,
 		// testdata/pure-ftpd.pem is a throwaway self-signed test fixture.
 		TLSConfig: &tls.Config{InsecureSkipVerify: true},
 	})
@@ -271,6 +273,7 @@ func TestIntegrationSFTP(t *testing.T) {
 		Username:       testUser,
 		Password:       testPassword,
 		ConnectTimeout: 10 * time.Second,
+		StallTimeout:   30 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("DialSFTP: %v", err)

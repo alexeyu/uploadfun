@@ -64,7 +64,8 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 		fs.PrintDefaults()
 	}
 
-	if err := fs.Parse(args); err != nil {
+	paths, err := parseInterleaved(fs, args)
+	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, exitOK
 		}
@@ -87,7 +88,7 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 		return nil, exitUsageError
 	}
 
-	opts.paths = fs.Args()
+	opts.paths = paths
 	if len(opts.paths) == 0 {
 		_, _ = fmt.Fprintln(stderr, "uploadfun: at least one file or directory argument is required")
 		fs.Usage()
@@ -95,6 +96,27 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	}
 
 	return opts, exitOK
+}
+
+// parseInterleaved runs fs.Parse repeatedly so flags and positional
+// arguments may appear in any order — the documented invocation puts
+// paths before --config, but stdlib flag otherwise stops parsing at the
+// first positional. It returns the collected positionals, or the first
+// fs.Parse error (including flag.ErrHelp).
+func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positionals []string
+	rest := args
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		rest = fs.Args()
+		if len(rest) == 0 {
+			return positionals, nil
+		}
+		positionals = append(positionals, rest[0])
+		rest = rest[1:]
+	}
 }
 
 // expandPaths turns the positional file/dir arguments into a flat file
@@ -131,7 +153,29 @@ func expandPaths(paths []string) ([]string, error) {
 			files = append(files, filepath.Join(p, entry.Name()))
 		}
 	}
+	if err := checkBasenameCollisions(files); err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// checkBasenameCollisions rejects inputs that would map to the same remote
+// filename. The remote name is a file's basename (see dispatch's
+// remoteName), so two inputs sharing a basename — e.g. a/img.jpg and
+// b/img.jpg, or the same path passed twice — would, under the default
+// delete-first overwrite, have one silently clobber the other. Catch it up
+// front rather than reporting success for a file that was overwritten.
+func checkBasenameCollisions(files []string) error {
+	seen := make(map[string]string, len(files))
+	for _, f := range files {
+		base := filepath.Base(f)
+		if prev, ok := seen[base]; ok {
+			return fmt.Errorf(
+				"inputs %q and %q both upload to remote name %q", prev, f, base)
+		}
+		seen[base] = f
+	}
+	return nil
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {

@@ -17,6 +17,7 @@ type FTPSDialOptions struct {
 	Username       string
 	Password       string
 	ConnectTimeout time.Duration
+	StallTimeout   time.Duration // 0 disables idle-stall protection
 	// TLSConfig overrides the default. Optional; any of ServerName or
 	// ClientSessionCache left unset are filled in automatically (see
 	// resolveTLSConfig) — both are required for many servers' data
@@ -34,6 +35,7 @@ func DialFTPS(ctx context.Context, opts FTPSDialOptions) (*FTPClient, error) {
 		Username:       opts.Username,
 		Password:       opts.Password,
 		ConnectTimeout: opts.ConnectTimeout,
+		StallTimeout:   opts.StallTimeout,
 		explicitTLS:    true,
 		tlsConfig:      opts.TLSConfig,
 	})

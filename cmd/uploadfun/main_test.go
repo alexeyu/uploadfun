@@ -63,6 +63,30 @@ func TestParseArgsValid(t *testing.T) {
 	}
 }
 
+func TestParseArgsInterleavedPathsAndFlags(t *testing.T) {
+	// The documented invocation puts paths before --config; flags and
+	// positionals must be accepted in any order.
+	cases := [][]string{
+		{"a.jpg", "dir/", "--config", "x.yaml"},
+		{"a.jpg", "--config", "x.yaml", "dir/"},
+		{"--config", "x.yaml", "a.jpg", "dir/"},
+		{"a.jpg", "--verbose", "dir/", "--config", "x.yaml"},
+	}
+	for _, args := range cases {
+		var stdout, stderr bytes.Buffer
+		opts, code := parseArgs(args, &stdout, &stderr)
+		if opts == nil {
+			t.Fatalf("args %v: expected valid opts (code=%d, stderr=%q)", args, code, stderr.String())
+		}
+		if opts.configPath != "x.yaml" {
+			t.Errorf("args %v: expected config x.yaml, got %q", args, opts.configPath)
+		}
+		if len(opts.paths) != 2 || opts.paths[0] != "a.jpg" || opts.paths[1] != "dir/" {
+			t.Errorf("args %v: unexpected paths %v", args, opts.paths)
+		}
+	}
+}
+
 func TestParseArgsDryRunAndNoVerify(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	opts, code := parseArgs(
@@ -131,6 +155,20 @@ func TestExpandPaths(t *testing.T) {
 		if !want[f] {
 			t.Errorf("unexpected file in expansion: %s", f)
 		}
+	}
+}
+
+func TestExpandPathsRejectsBasenameCollision(t *testing.T) {
+	dirA, dirB := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(dirA, "img.jpg"), "a")
+	writeFile(t, filepath.Join(dirB, "img.jpg"), "b")
+
+	_, err := expandPaths([]string{filepath.Join(dirA, "img.jpg"), filepath.Join(dirB, "img.jpg")})
+	if err == nil {
+		t.Fatal("expected an error when two inputs share a remote basename")
+	}
+	if !strings.Contains(err.Error(), "img.jpg") {
+		t.Errorf("expected the colliding name in the error, got %q", err.Error())
 	}
 }
 

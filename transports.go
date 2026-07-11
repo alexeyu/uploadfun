@@ -100,6 +100,7 @@ func dialFTPClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
 		Username:       ep.Username,
 		Password:       ep.Password,
 		ConnectTimeout: ep.ConnectTimeout,
+		StallTimeout:   ep.StallTimeout,
 	})
 }
 
@@ -110,6 +111,7 @@ func dialFTPSClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
 		Username:       ep.Username,
 		Password:       ep.Password,
 		ConnectTimeout: ep.ConnectTimeout,
+		StallTimeout:   ep.StallTimeout,
 	})
 }
 
@@ -121,5 +123,6 @@ func dialSFTPClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
 		Password:       ep.Password,
 		PrivateKeyPath: ep.PrivateKey,
 		ConnectTimeout: ep.ConnectTimeout,
+		StallTimeout:   ep.StallTimeout,
 	})
 }

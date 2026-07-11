@@ -64,7 +64,8 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 		fs.PrintDefaults()
 	}
 
-	if err := fs.Parse(args); err != nil {
+	paths, err := parseInterleaved(fs, args)
+	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, exitOK
 		}
@@ -87,7 +88,7 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 		return nil, exitUsageError
 	}
 
-	opts.paths = fs.Args()
+	opts.paths = paths
 	if len(opts.paths) == 0 {
 		_, _ = fmt.Fprintln(stderr, "uploadfun: at least one file or directory argument is required")
 		fs.Usage()
@@ -95,6 +96,27 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	}
 
 	return opts, exitOK
+}
+
+// parseInterleaved runs fs.Parse repeatedly so flags and positional
+// arguments may appear in any order — the documented invocation puts
+// paths before --config, but stdlib flag otherwise stops parsing at the
+// first positional. It returns the collected positionals, or the first
+// fs.Parse error (including flag.ErrHelp).
+func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positionals []string
+	rest := args
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		rest = fs.Args()
+		if len(rest) == 0 {
+			return positionals, nil
+		}
+		positionals = append(positionals, rest[0])
+		rest = rest[1:]
+	}
 }
 
 // expandPaths turns the positional file/dir arguments into a flat file

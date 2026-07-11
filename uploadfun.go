@@ -95,6 +95,11 @@ func (ProgressEvent) uploadEvent() {}
 type FileSuccessEvent struct {
 	Endpoint string
 	File     string
+	// VerifyMethod describes what verification was performed ("size",
+	// "size+hash"), or "" if verification was disabled (NoVerify). Lets
+	// a caller surface the weaker size-only guarantee distinctly rather
+	// than silently.
+	VerifyMethod string
 }
 
 func (FileSuccessEvent) uploadEvent() {}
@@ -127,11 +132,11 @@ func (EndpointDoneEvent) uploadEvent() {}
 // per Endpoint.Attempts/RetryDelay. Every worker's events land on the
 // returned channel, which is closed once every endpoint worker is done or
 // ctx is canceled.
-//
-// This is a placeholder signature; the fan-out engine itself lands in a
-// later build step (see PLAN.md task 4).
 func Upload(ctx context.Context, files []string, endpoints []Endpoint, opts Options) <-chan UploadEvent {
 	events := make(chan UploadEvent)
-	close(events)
+	go func() {
+		defer close(events)
+		dispatch(ctx, files, endpoints, opts, events)
+	}()
 	return events
 }

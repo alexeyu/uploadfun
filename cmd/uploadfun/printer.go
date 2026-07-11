@@ -9,8 +9,7 @@ import (
 )
 
 // outputMode controls which events reach stdout; independent of json,
-// which only controls how (see ARCHITECTURE.md "CLI" output modes
-// table).
+// which only controls how.
 type outputMode int
 
 const (

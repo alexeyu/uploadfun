@@ -26,13 +26,11 @@ type remoteClient interface {
 }
 
 // transportUploader adapts one internal/transport client to the Uploader
-// interface dispatch.go drives. None of the underlying transport clients
-// support per-operation cancellation once connected (see
-// ARCHITECTURE.md "Internal Uploader interface") — ctx is only honored
-// at Connect time; an in-flight upload/delete/verify/list runs to
-// completion (or its own network-level timeout) even if ctx is canceled
-// mid-call. Cancellation still takes effect promptly between attempts
-// and between files.
+// interface dispatch.go drives. The underlying clients don't support
+// per-operation cancellation once connected: ctx is honored only at Connect
+// time, and an in-flight upload/delete/verify/list runs to completion (or
+// its own network-level timeout) even if ctx is canceled mid-call.
+// Cancellation still takes effect promptly between attempts and files.
 type transportUploader struct {
 	dial   func(ctx context.Context, ep Endpoint) (remoteClient, error)
 	client remoteClient

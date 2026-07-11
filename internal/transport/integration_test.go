@@ -1,9 +1,8 @@
 //go:build integration
 
 // Real-server integration tests, gated behind the "integration" build
-// tag per ARCHITECTURE.md's Testing strategy — they need Docker and
-// exercise actual FTP/FTPS/SFTP servers, so they never run as part of a
-// plain `go test`. Run with:
+// tag — they need Docker and exercise actual FTP/FTPS/SFTP servers, so
+// they never run as part of a plain `go test`. Run with:
 //
 //	go test -tags integration ./internal/transport/...
 //
@@ -136,8 +135,7 @@ func startAtmozSFTP() func() {
 
 	// The container's SSH host key is regenerated every run, so populate
 	// known_hosts for it before any test dials in — DialSFTP refuses to
-	// connect to an unrecognized host (see ARCHITECTURE.md "Scope:
-	// protocols").
+	// connect to an unrecognized host.
 	if err := os.MkdirAll(filepath.Join(itHome, ".ssh"), 0o700); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

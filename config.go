@@ -42,7 +42,7 @@ var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // ${ENV_VAR} interpolation and global-default/per-endpoint-override
 // merging along the way. It validates the whole file and collects every
 // error rather than stopping at the first, so a caller can report them
-// all at once (see ARCHITECTURE.md "Config format" / Validation).
+// all at once.
 func LoadConfig(path string) ([]Endpoint, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

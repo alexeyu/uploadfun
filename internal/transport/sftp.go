@@ -180,8 +180,8 @@ func (c *SFTPClient) Delete(remoteName string) error {
 	return err
 }
 
-// Upload streams r (size bytes total) to remoteName, invoking progress
-// with cumulative bytes sent as it reads.
+// Upload streams r (size bytes total) to remoteName, reporting cumulative
+// bytes through progress.
 func (c *SFTPClient) Upload(
 	remoteName string, r io.Reader, size int64, progress func(sent, total int64),
 ) error {
@@ -205,10 +205,8 @@ func (c *SFTPClient) Size(remoteName string) (int64, error) {
 	return info.Size(), nil
 }
 
-// Verify compares localPath's size against remoteName's size on the
-// server. Plain SFTP has no standard hash-comparison equivalent to FTP's
-// XCRC/XMD5/XSHA1 extensions, so this is size-only, same as the FTP/FTPS
-// transports for v1 (see ARCHITECTURE.md "Verification").
+// Verify checks localPath's size against the remote file's. SFTP has no
+// standard remote-hash command, so verification is size-only, like FTP/FTPS.
 func (c *SFTPClient) Verify(localPath, remoteName string) (method string, err error) {
 	return verifyBySize(localPath, remoteName, c.Size)
 }

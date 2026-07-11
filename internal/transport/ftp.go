@@ -185,8 +185,8 @@ func (c *FTPClient) Delete(remoteName string) error {
 	return err
 }
 
-// Upload streams r (size bytes total) to remoteName via STOR, invoking
-// progress with cumulative bytes sent as it reads.
+// Upload streams r (size bytes total) to remoteName via STOR, reporting
+// cumulative bytes through progress.
 func (c *FTPClient) Upload(
 	remoteName string, r io.Reader, size int64, progress func(sent, total int64),
 ) error {
@@ -194,16 +194,14 @@ func (c *FTPClient) Upload(
 	return c.conn.Stor(remoteName, pr)
 }
 
-// Size issues SIZE and returns the remote file's size in bytes.
+// Size returns the remote file's size in bytes via SIZE.
 func (c *FTPClient) Size(remoteName string) (int64, error) {
 	return c.conn.FileSize(remoteName)
 }
 
-// Verify compares localPath's size against remoteName's size on the
-// server. jlaffaye/ftp exposes no public way to query FEAT or issue
-// XCRC/XMD5/XSHA1 hash commands (see ARCHITECTURE.md "Verification"), so
-// FTP/FTPS verification is size-only for v1; method is always "size" on
-// success.
+// Verify checks localPath's size against the remote file's. jlaffaye/ftp
+// exposes no FEAT/XCRC/XMD5/XSHA1 access, so FTP/FTPS verification is
+// size-only.
 func (c *FTPClient) Verify(localPath, remoteName string) (method string, err error) {
 	return verifyBySize(localPath, remoteName, c.Size)
 }

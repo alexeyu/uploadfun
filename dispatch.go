@@ -10,9 +10,8 @@ import (
 
 // Uploader is the per-protocol transport implementation an endpoint
 // worker drives. One Uploader is connected once per Endpoint and reused
-// across every file in the batch for as long as nothing fails (see
-// ARCHITECTURE.md "Concurrency & retry model"); any failure disconnects
-// and the next attempt reconnects from scratch.
+// across every file in the batch for as long as nothing fails; any failure
+// disconnects and the next attempt reconnects from scratch.
 //
 // Delete must treat "remote file doesn't exist" as success (a no-op),
 // not an error — it's called unconditionally before every upload when
@@ -33,8 +32,8 @@ type Uploader interface {
 }
 
 // newUploader selects the Uploader implementation for protocol. It's a
-// package variable so tests can substitute a fake, and later build steps
-// (PLAN.md tasks 4-7) register the real ftp/ftps/sftp transports here.
+// package variable so tests can substitute a fake; transports.go wires in
+// the real ftp/ftps/sftp implementation in its init.
 var newUploader = func(protocol Protocol) (Uploader, error) {
 	return nil, fmt.Errorf("no transport registered for protocol %q", protocol)
 }
@@ -223,8 +222,7 @@ func (w *endpointWorker) sleepBeforeRetry(attempt int) {
 
 // runDryRun performs the --dry-run connectivity check for one endpoint:
 // connect, authenticate, list the remote directory, disconnect — never
-// touching files, matching "no transfer, no delete, no writes" (see
-// ARCHITECTURE.md "CLI" other flags).
+// touching files.
 func runDryRun(ctx context.Context, up Uploader, ep Endpoint, events chan<- UploadEvent) {
 	connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
 	err := up.Connect(connectCtx, ep)

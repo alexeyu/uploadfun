@@ -8,11 +8,9 @@ import (
 	"time"
 )
 
-// verifyBySize confirms remoteName is the same size as localPath, the
-// size-only verification both FTP/FTPS and SFTP fall back to (neither
-// exposes a portable remote-hash command; see ARCHITECTURE.md
-// "Verification"). remoteSize fetches the remote file's size for whichever
-// transport is calling. On success method is always "size".
+// verifyBySize confirms remoteName matches localPath's size — the size-only
+// check both FTP/FTPS and SFTP fall back to, lacking a portable remote-hash
+// command. remoteSize fetches the remote size for the calling transport.
 func verifyBySize(localPath, remoteName string, remoteSize func(string) (int64, error)) (
 	method string, err error,
 ) {
@@ -30,8 +28,7 @@ func verifyBySize(localPath, remoteName string, remoteSize func(string) (int64, 
 	return "size", nil
 }
 
-// resolvePort returns port, or def when port is 0 (unset), so each
-// transport can supply its own protocol default.
+// resolvePort returns port, or def when port is 0 (unset).
 func resolvePort(port, def int) int {
 	if port == 0 {
 		return def
@@ -40,10 +37,8 @@ func resolvePort(port, def int) int {
 }
 
 // dirEntryNames collects entry names for a --dry-run listing, dropping the
-// "." and ".." pseudo-entries some servers include (MLSD-answering servers
-// like pure-ftpd among them) — a caller displaying "N entries" shouldn't
-// count them. name extracts the filename from each transport's own entry
-// type.
+// "." and ".." pseudo-entries some servers include so a "N entries" count
+// isn't inflated. name extracts the filename from each transport's entry type.
 func dirEntryNames[T any](entries []T, name func(T) string) []string {
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -54,11 +49,10 @@ func dirEntryNames[T any](entries []T, name func(T) string) []string {
 	return names
 }
 
-// armConnectDeadline sets timeout as a deadline on conn covering the whole
+// armConnectDeadline gives conn a deadline covering the whole
 // connect+login/handshake phase, so a server that accepts TCP then stalls
 // mid-negotiation fails instead of blocking forever. A non-positive timeout
-// leaves the conn without a deadline. Cleared with clearDeadline once the
-// session is established, handing enforcement over to the stall guard.
+// leaves conn without a deadline; clearDeadline lifts it once established.
 func armConnectDeadline(conn net.Conn, timeout time.Duration) {
 	if timeout > 0 {
 		_ = conn.SetDeadline(time.Now().Add(timeout))

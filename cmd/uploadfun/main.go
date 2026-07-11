@@ -122,7 +122,7 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 // expandPaths turns the positional file/dir arguments into a flat file
 // list: directories expand non-recursively, every regular file included,
 // no extension filtering, subdirectories and hidden/dotfiles silently
-// skipped (see ARCHITECTURE.md "CLI" invocation & input files).
+// skipped.
 func expandPaths(paths []string) ([]string, error) {
 	var files []string
 	for _, p := range paths {

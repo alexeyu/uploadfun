@@ -59,22 +59,14 @@ func DialFTP(ctx context.Context, opts FTPDialOptions) (*FTPClient, error) {
 }
 
 func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
-	port := cfg.Port
-	if port == 0 {
-		port = defaultFTPPort
-	}
-	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(port))
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(resolvePort(cfg.Port)))
 
 	dialOpts := []ftp.DialOption{
 		ftp.DialWithContext(ctx),
 		ftp.DialWithTimeout(cfg.ConnectTimeout),
 	}
 	if cfg.explicitTLS {
-		tlsConfig := cfg.tlsConfig
-		if tlsConfig == nil {
-			tlsConfig = &tls.Config{ServerName: cfg.Host}
-		}
-		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(tlsConfig))
+		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(resolveTLSConfig(cfg.Host, cfg.tlsConfig)))
 	}
 
 	conn, err := ftp.Dial(addr, dialOpts...)
@@ -86,6 +78,20 @@ func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 		return nil, fmt.Errorf("login: %w", err)
 	}
 	return &FTPClient{conn: conn}, nil
+}
+
+func resolvePort(port int) int {
+	if port == 0 {
+		return defaultFTPPort
+	}
+	return port
+}
+
+func resolveTLSConfig(host string, cfg *tls.Config) *tls.Config {
+	if cfg != nil {
+		return cfg
+	}
+	return &tls.Config{ServerName: host}
 }
 
 // Close ends the session with a QUIT.

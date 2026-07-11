@@ -22,6 +22,9 @@ const (
 	exitUsageError     = 3
 )
 
+// version is overridden at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -35,13 +38,14 @@ type cliOptions struct {
 	json       bool
 	dryRun     bool
 	noVerify   bool
+	version    bool
 	paths      []string
 }
 
-// parseArgs returns nil options (and the exit code to use) for both
-// --help and any usage error, so run's caller doesn't need to
+// parseArgs returns nil options (and the exit code to use) for --help,
+// --version, and any usage error, so run's caller doesn't need to
 // distinguish "asked for help" from "got it wrong" — both just stop.
-func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
+func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	fs := flag.NewFlagSet("uploadfun", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	opts := &cliOptions{}
@@ -51,6 +55,7 @@ func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
 	fs.BoolVar(&opts.json, "json", false, "format output as newline-delimited JSON")
 	fs.BoolVar(&opts.dryRun, "dry-run", false, "connect, authenticate, and list each endpoint's remote directory; no transfer, no delete, no writes")
 	fs.BoolVar(&opts.noVerify, "no-verify", false, "disable post-upload size/hash verification")
+	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(stderr, "Usage: %s <path>... --config <file> [flags]\n\n", fs.Name())
 		fs.PrintDefaults()
@@ -61,6 +66,11 @@ func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
 			return nil, exitOK
 		}
 		return nil, exitUsageError
+	}
+
+	if opts.version {
+		_, _ = fmt.Fprintln(stdout, "uploadfun", version)
+		return nil, exitOK
 	}
 
 	if opts.quiet && opts.verbose {
@@ -122,7 +132,7 @@ func expandPaths(paths []string) ([]string, error) {
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	opts, code := parseArgs(args, stderr)
+	opts, code := parseArgs(args, stdout, stderr)
 	if opts == nil {
 		return code
 	}

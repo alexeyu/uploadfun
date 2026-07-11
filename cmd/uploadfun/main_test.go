@@ -10,8 +10,8 @@ import (
 )
 
 func TestParseArgsRequiresConfig(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"a.jpg"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"a.jpg"}, &stdout, &stderr)
 	if opts != nil {
 		t.Fatal("expected nil opts when --config is missing")
 	}
@@ -24,8 +24,8 @@ func TestParseArgsRequiresConfig(t *testing.T) {
 }
 
 func TestParseArgsRequiresAtLeastOnePath(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--config", "x.yaml"}, &stdout, &stderr)
 	if opts != nil {
 		t.Fatal("expected nil opts when no paths are given")
 	}
@@ -35,8 +35,8 @@ func TestParseArgsRequiresAtLeastOnePath(t *testing.T) {
 }
 
 func TestParseArgsQuietAndVerboseAreMutuallyExclusive(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--quiet", "--verbose", "a.jpg"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--config", "x.yaml", "--quiet", "--verbose", "a.jpg"}, &stdout, &stderr)
 	if opts != nil {
 		t.Fatal("expected nil opts for conflicting flags")
 	}
@@ -46,8 +46,8 @@ func TestParseArgsQuietAndVerboseAreMutuallyExclusive(t *testing.T) {
 }
 
 func TestParseArgsValid(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--json", "a.jpg", "dir/"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--config", "x.yaml", "--json", "a.jpg", "dir/"}, &stdout, &stderr)
 	if opts == nil {
 		t.Fatalf("expected valid opts, got nil (code=%d, stderr=%q)", code, stderr.String())
 	}
@@ -60,8 +60,8 @@ func TestParseArgsValid(t *testing.T) {
 }
 
 func TestParseArgsDryRunAndNoVerify(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--dry-run", "--no-verify", "a.jpg"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--config", "x.yaml", "--dry-run", "--no-verify", "a.jpg"}, &stdout, &stderr)
 	if opts == nil {
 		t.Fatalf("expected valid opts (code=%d, stderr=%q)", code, stderr.String())
 	}
@@ -71,13 +71,27 @@ func TestParseArgsDryRunAndNoVerify(t *testing.T) {
 }
 
 func TestParseArgsHelp(t *testing.T) {
-	var stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--help"}, &stderr)
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--help"}, &stdout, &stderr)
 	if opts != nil {
 		t.Fatal("expected nil opts for --help")
 	}
 	if code != exitOK {
 		t.Errorf("expected exitOK for --help, got %d", code)
+	}
+}
+
+func TestParseArgsVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--version"}, &stdout, &stderr)
+	if opts != nil {
+		t.Fatal("expected nil opts for --version")
+	}
+	if code != exitOK {
+		t.Errorf("expected exitOK for --version, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "uploadfun") {
+		t.Errorf("expected version string on stdout, got %q", stdout.String())
 	}
 }
 

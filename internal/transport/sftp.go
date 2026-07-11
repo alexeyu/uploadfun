@@ -29,6 +29,7 @@ type SFTPDialOptions struct {
 	Password       string
 	PrivateKeyPath string
 	ConnectTimeout time.Duration
+	StallTimeout   time.Duration // 0 disables idle-stall protection
 }
 
 // SFTPClient wraps a connected SSH+SFTP session. Not safe for concurrent
@@ -63,7 +64,11 @@ func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 	if opts.ConnectTimeout > 0 {
 		_ = conn.SetDeadline(time.Now().Add(opts.ConnectTimeout))
 	}
-	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, &ssh.ClientConfig{
+	// Wrap the conn so that, once established, an idle SFTP transfer trips
+	// the stall timeout. It stays passive until then, leaving the connect
+	// deadline set above in force through the handshake and subsystem open.
+	guard := &stallGuard{stallTimeout: opts.StallTimeout}
+	sshConn, chans, reqs, err := ssh.NewClientConn(guard.wrap(conn), addr, &ssh.ClientConfig{
 		User:            opts.Username,
 		Auth:            auth,
 		HostKeyCallback: hostKeyCallback,
@@ -80,12 +85,12 @@ func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("open sftp session: %w", err)
 	}
-	// Clear the connect deadline only now: the SFTP subsystem open above
-	// is part of connecting and must be bounded by it too, not left
-	// unbounded once the SSH handshake completes.
+	// Session is up (handshake + subsystem open both bounded by the connect
+	// deadline); clear it and hand transfers over to the idle stall timeout.
 	if opts.ConnectTimeout > 0 {
 		_ = conn.SetDeadline(time.Time{})
 	}
+	guard.markEstablished()
 
 	return &SFTPClient{sshConn: client, sftp: sftpClient}, nil
 }

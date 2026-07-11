@@ -73,15 +73,18 @@ func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("ssh handshake: %w", err)
 	}
-	if opts.ConnectTimeout > 0 {
-		_ = conn.SetDeadline(time.Time{})
-	}
 
 	client := ssh.NewClient(sshConn, chans, reqs)
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("open sftp session: %w", err)
+	}
+	// Clear the connect deadline only now: the SFTP subsystem open above
+	// is part of connecting and must be bounded by it too, not left
+	// unbounded once the SSH handshake completes.
+	if opts.ConnectTimeout > 0 {
+		_ = conn.SetDeadline(time.Time{})
 	}
 
 	return &SFTPClient{sshConn: client, sftp: sftpClient}, nil

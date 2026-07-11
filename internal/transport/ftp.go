@@ -61,12 +61,46 @@ func DialFTP(ctx context.Context, opts FTPDialOptions) (*FTPClient, error) {
 func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(resolvePort(cfg.Port)))
 
-	dialOpts := []ftp.DialOption{
-		ftp.DialWithContext(ctx),
-		ftp.DialWithTimeout(cfg.ConnectTimeout),
-	}
+	var tlsConfig *tls.Config
 	if cfg.explicitTLS {
-		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(resolveTLSConfig(cfg.Host, cfg.tlsConfig)))
+		tlsConfig = resolveTLSConfig(cfg.Host, cfg.tlsConfig)
+	}
+
+	// A custom dial func (used by jlaffaye/ftp for both the control and
+	// data connections) lets us bound the whole connect+login sequence,
+	// not just the TCP dial that DialWithTimeout/DialWithContext cover: a
+	// server that accepts TCP then stalls on the banner, AUTH TLS, or the
+	// USER/PASS exchange would otherwise block forever.
+	var ctrlConn net.Conn
+	dialFunc := func(network, address string) (net.Conn, error) {
+		conn, err := (&net.Dialer{Timeout: cfg.ConnectTimeout}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		// The first dial is the control connection: hand back the raw
+		// conn (the library does the AUTH TLS upgrade itself) with a
+		// deadline covering banner/AUTH-TLS/login. Data connections opened
+		// later must not inherit that deadline.
+		if ctrlConn == nil {
+			ctrlConn = conn
+			if cfg.ConnectTimeout > 0 {
+				_ = conn.SetDeadline(time.Now().Add(cfg.ConnectTimeout))
+			}
+			return conn, nil
+		}
+		// Data connection: with a custom dial func the library skips its
+		// own TLS wrapping, so wrap it here with the same config (shared
+		// ClientSessionCache + ServerName) that lets the data session
+		// resume the control session — pure-ftpd and others require it.
+		if tlsConfig != nil {
+			return tls.Client(conn, tlsConfig), nil
+		}
+		return conn, nil
+	}
+
+	dialOpts := []ftp.DialOption{ftp.DialWithDialFunc(dialFunc)}
+	if cfg.explicitTLS {
+		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(tlsConfig))
 	}
 
 	conn, err := ftp.Dial(addr, dialOpts...)
@@ -76,6 +110,11 @@ func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 	if err := conn.Login(cfg.Username, cfg.Password); err != nil {
 		_ = conn.Quit()
 		return nil, fmt.Errorf("login: %w", err)
+	}
+	// Session is up; clear the connect deadline so transfers run unbounded
+	// by it (stall protection is a separate, idle-based concern).
+	if ctrlConn != nil {
+		_ = ctrlConn.SetDeadline(time.Time{})
 	}
 	return &FTPClient{conn: conn}, nil
 }

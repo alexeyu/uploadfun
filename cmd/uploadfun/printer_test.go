@@ -14,7 +14,9 @@ func syntheticEvents() []uploadfun.UploadEvent {
 	return []uploadfun.UploadEvent{
 		uploadfun.ProgressEvent{Endpoint: "ep1", File: "a.jpg", BytesSent: 50, TotalBytes: 100},
 		uploadfun.FileSuccessEvent{Endpoint: "ep1", File: "a.jpg", VerifyMethod: "size"},
-		uploadfun.FileErrorEvent{Endpoint: "ep2", File: "b.jpg", Attempt: 1, Reason: "boom", Err: errors.New("boom")},
+		uploadfun.FileErrorEvent{
+			Endpoint: "ep2", File: "b.jpg", Attempt: 1, Reason: "boom", Err: errors.New("boom"),
+		},
 		uploadfun.EndpointDoneEvent{Endpoint: "ep1", Succeeded: 1, Failed: 0},
 		uploadfun.EndpointDoneEvent{Endpoint: "ep2", Succeeded: 0, Failed: 1},
 	}
@@ -24,7 +26,9 @@ func runPrinter(mode outputMode, jsonOutput bool) (stdout, stderr string, failed
 	return runPrinterWithEvents(mode, jsonOutput, syntheticEvents())
 }
 
-func runPrinterWithEvents(mode outputMode, jsonOutput bool, synthetic []uploadfun.UploadEvent) (stdout, stderr string, failed bool) {
+func runPrinterWithEvents(
+	mode outputMode, jsonOutput bool, synthetic []uploadfun.UploadEvent,
+) (stdout, stderr string, failed bool) {
 	var outBuf, errBuf bytes.Buffer
 	p := newPrinter(&outBuf, &errBuf, mode, jsonOutput)
 

@@ -59,7 +59,9 @@ func (f *fakeUploader) Delete(ctx context.Context, remoteName string) error {
 	return nil
 }
 
-func (f *fakeUploader) Upload(ctx context.Context, localPath, remoteName string, progress func(sent, total int64)) error {
+func (f *fakeUploader) Upload(
+	ctx context.Context, localPath, remoteName string, progress func(sent, total int64),
+) error {
 	f.mu.Lock()
 	f.uploadCalls++
 	calls := f.uploadCalls
@@ -146,7 +148,9 @@ func TestDispatchSuccess(t *testing.T) {
 	f := &fakeUploader{}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg", "b.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg", "b.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{},
+	))
 
 	counts := countByType(events)
 	if counts["success"] != 2 {
@@ -180,7 +184,9 @@ func TestDispatchRetrySucceedsAfterFailure(t *testing.T) {
 	f := &fakeUploader{failUploadN: 1}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{},
+	))
 
 	counts := countByType(events)
 	if counts["error"] != 1 {
@@ -255,7 +261,9 @@ func TestDispatchNoVerifySkipsVerification(t *testing.T) {
 	f := &fakeUploader{verifyErr: errors.New("verify would always fail")}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{NoVerify: true}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{NoVerify: true},
+	))
 
 	counts := countByType(events)
 	if counts["success"] != 1 {
@@ -295,7 +303,9 @@ func TestDispatchUnregisteredProtocol(t *testing.T) {
 	// could still invoke directly with one.
 	ep := testEndpoint("ep1")
 	ep.Protocol = Protocol("bogus")
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg", "b.jpg"}, []Endpoint{ep}, Options{}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg", "b.jpg"}, []Endpoint{ep}, Options{},
+	))
 
 	counts := countByType(events)
 	if counts["error"] != 2 {
@@ -320,7 +330,9 @@ func TestDispatchContextCanceledBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	events := collectEvents(Upload(ctx, []string{"a.jpg", "b.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{}))
+	events := collectEvents(Upload(
+		ctx, []string{"a.jpg", "b.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{},
+	))
 
 	var done EndpointDoneEvent
 	for _, e := range events {
@@ -337,7 +349,9 @@ func TestDispatchDryRunSuccess(t *testing.T) {
 	f := &fakeUploader{listResult: []string{"existing1.jpg", "existing2.jpg"}}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
+	))
 
 	if len(events) != 1 {
 		t.Fatalf("expected exactly 1 event for a dry run, got %d: %+v", len(events), events)
@@ -354,7 +368,8 @@ func TestDispatchDryRunSuccess(t *testing.T) {
 	}
 
 	if f.uploadCalls != 0 || f.deleteCalls != 0 {
-		t.Errorf("expected no upload/delete calls during a dry run, got uploadCalls=%d deleteCalls=%d", f.uploadCalls, f.deleteCalls)
+		t.Errorf("expected no upload/delete calls during a dry run, got uploadCalls=%d deleteCalls=%d",
+			f.uploadCalls, f.deleteCalls)
 	}
 	if f.listCalls != 1 {
 		t.Errorf("expected exactly 1 List call, got %d", f.listCalls)
@@ -368,7 +383,9 @@ func TestDispatchDryRunConnectFailure(t *testing.T) {
 	f := &fakeUploader{failConnectN: 999}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
+	))
 
 	if len(events) != 1 {
 		t.Fatalf("expected exactly 1 event, got %d: %+v", len(events), events)
@@ -389,7 +406,9 @@ func TestDispatchDryRunListFailure(t *testing.T) {
 	f := &fakeUploader{listErr: errors.New("list failed")}
 	withFakeUploader(t, f)
 
-	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
+	))
 
 	dr, ok := events[0].(DryRunEvent)
 	if !ok {

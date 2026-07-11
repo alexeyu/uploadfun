@@ -65,7 +65,8 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 	switch e := ev.(type) {
 	case uploadfun.ProgressEvent:
 		if p.mode == modeVerbose {
-			p.write(p.stdout, e, fmt.Sprintf("[%s] %s: %d/%d bytes", e.Endpoint, e.File, e.BytesSent, e.TotalBytes))
+			msg := fmt.Sprintf("[%s] %s: %d/%d bytes", e.Endpoint, e.File, e.BytesSent, e.TotalBytes)
+			p.write(p.stdout, e, msg)
 		}
 	case uploadfun.FileSuccessEvent:
 		if p.mode != modeQuiet {
@@ -79,10 +80,12 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		// Errors always print, even in --quiet — "nothing" in the output
 		// modes table means non-error stdout output, not silence on
 		// failure.
-		p.write(p.stderr, e, fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason))
+		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)
+		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointDoneEvent:
 		if p.mode != modeQuiet {
-			p.write(p.stdout, e, fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed))
+			msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
+			p.write(p.stdout, e, msg)
 		}
 	case uploadfun.DryRunEvent:
 		if e.Err != nil {
@@ -91,7 +94,8 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			return
 		}
 		if p.mode != modeQuiet {
-			p.write(p.stdout, e, fmt.Sprintf("[%s] dry-run ok: %d entries in remote directory", e.Endpoint, len(e.Entries)))
+			msg := fmt.Sprintf("[%s] dry-run ok: %d entries in remote directory", e.Endpoint, len(e.Entries))
+			p.write(p.stdout, e, msg)
 		}
 	}
 }

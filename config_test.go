@@ -62,7 +62,8 @@ stall_timeout: 5m
 		t.Errorf("expected default overwrite delete-first, got %q", shutterstock.Overwrite)
 	}
 	if shutterstock.Attempts != 3 || shutterstock.RetryDelay != 2*time.Second {
-		t.Errorf("expected global defaults applied, got attempts=%d retry_delay=%v", shutterstock.Attempts, shutterstock.RetryDelay)
+		t.Errorf("expected global defaults applied, got attempts=%d retry_delay=%v",
+			shutterstock.Attempts, shutterstock.RetryDelay)
 	}
 
 	dreamstime := endpoints[1]

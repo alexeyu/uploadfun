@@ -98,7 +98,8 @@ func waitForPort(addr string, timeout time.Duration) {
 }
 
 func startPureFTPD() func() {
-	exec.Command("docker", "rm", "-f", ftpContainerName).Run() //nolint:errcheck // best-effort cleanup of a leftover run
+	cleanup := exec.Command("docker", "rm", "-f", ftpContainerName)
+	_ = cleanup.Run() //nolint:errcheck // best-effort cleanup of a leftover run
 
 	certPath, err := filepath.Abs("testdata/pure-ftpd.pem")
 	if err != nil {
@@ -123,7 +124,8 @@ func startPureFTPD() func() {
 }
 
 func startAtmozSFTP() func() {
-	exec.Command("docker", "rm", "-f", sftpContainerName).Run() //nolint:errcheck // best-effort cleanup of a leftover run
+	cleanup := exec.Command("docker", "rm", "-f", sftpContainerName)
+	_ = cleanup.Run() //nolint:errcheck // best-effort cleanup of a leftover run
 
 	mustRunDocker("run", "-d", "--name", sftpContainerName,
 		"-p", fmt.Sprintf("%d:22", sftpPort),
@@ -143,7 +145,9 @@ func startAtmozSFTP() func() {
 	var scanOut []byte
 	var scanErr error
 	for attempt := 0; attempt < 5; attempt++ {
-		scanOut, scanErr = exec.Command("ssh-keyscan", "-p", fmt.Sprintf("%d", sftpPort), "-t", "ed25519,rsa", "127.0.0.1").Output()
+		scanOut, scanErr = exec.Command(
+			"ssh-keyscan", "-p", fmt.Sprintf("%d", sftpPort), "-t", "ed25519,rsa", "127.0.0.1",
+		).Output()
 		if scanErr == nil && len(scanOut) > 0 {
 			break
 		}
@@ -180,13 +184,16 @@ func exerciseUploadDeleteVerify(t *testing.T, client verifyingUploader, remoteNa
 	}
 
 	var lastSent int64
-	if err := client.Upload(remoteName, bytes.NewReader(content), int64(len(content)), func(sent, total int64) {
-		lastSent = sent
-	}); err != nil {
-		t.Fatalf("Upload: %v", err)
+	uploadErr := client.Upload(remoteName, bytes.NewReader(content), int64(len(content)),
+		func(sent, total int64) {
+			lastSent = sent
+		})
+	if uploadErr != nil {
+		t.Fatalf("Upload: %v", uploadErr)
 	}
 	if lastSent != int64(len(content)) {
-		t.Errorf("expected final progress callback to report %d bytes sent, got %d", len(content), lastSent)
+		t.Errorf("expected final progress callback to report %d bytes sent, got %d",
+			len(content), lastSent)
 	}
 
 	method, err := client.Verify(localPath, remoteName)

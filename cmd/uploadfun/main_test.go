@@ -36,7 +36,9 @@ func TestParseArgsRequiresAtLeastOnePath(t *testing.T) {
 
 func TestParseArgsQuietAndVerboseAreMutuallyExclusive(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--quiet", "--verbose", "a.jpg"}, &stdout, &stderr)
+	opts, code := parseArgs(
+		[]string{"--config", "x.yaml", "--quiet", "--verbose", "a.jpg"}, &stdout, &stderr,
+	)
 	if opts != nil {
 		t.Fatal("expected nil opts for conflicting flags")
 	}
@@ -47,7 +49,9 @@ func TestParseArgsQuietAndVerboseAreMutuallyExclusive(t *testing.T) {
 
 func TestParseArgsValid(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--json", "a.jpg", "dir/"}, &stdout, &stderr)
+	opts, code := parseArgs(
+		[]string{"--config", "x.yaml", "--json", "a.jpg", "dir/"}, &stdout, &stderr,
+	)
 	if opts == nil {
 		t.Fatalf("expected valid opts, got nil (code=%d, stderr=%q)", code, stderr.String())
 	}
@@ -61,7 +65,9 @@ func TestParseArgsValid(t *testing.T) {
 
 func TestParseArgsDryRunAndNoVerify(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	opts, code := parseArgs([]string{"--config", "x.yaml", "--dry-run", "--no-verify", "a.jpg"}, &stdout, &stderr)
+	opts, code := parseArgs(
+		[]string{"--config", "x.yaml", "--dry-run", "--no-verify", "a.jpg"}, &stdout, &stderr,
+	)
 	if opts == nil {
 		t.Fatalf("expected valid opts (code=%d, stderr=%q)", code, stderr.String())
 	}
@@ -146,7 +152,8 @@ func TestRunConfigError(t *testing.T) {
 	writeFile(t, inputFile, "data")
 
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"--config", "/nonexistent/config.yaml", inputFile}, &stdout, &stderr)
+	code := run(context.Background(),
+		[]string{"--config", "/nonexistent/config.yaml", inputFile}, &stdout, &stderr)
 	if code != exitConfigError {
 		t.Errorf("expected exitConfigError, got %d", code)
 	}
@@ -158,10 +165,12 @@ func TestRunConfigError(t *testing.T) {
 func TestRunUsageErrorForMissingInputPath(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
-	writeFile(t, configPath, "endpoints:\n  - name: a\n    protocol: ftp\n    host: h\n    username: u\n    password: p\n")
+	writeFile(t, configPath,
+		"endpoints:\n  - name: a\n    protocol: ftp\n    host: h\n    username: u\n    password: p\n")
 
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"--config", configPath, "/nonexistent/input.jpg"}, &stdout, &stderr)
+	code := run(context.Background(),
+		[]string{"--config", configPath, "/nonexistent/input.jpg"}, &stdout, &stderr)
 	if code != exitUsageError {
 		t.Errorf("expected exitUsageError, got %d", code)
 	}

@@ -51,9 +51,12 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	opts := &cliOptions{}
 	fs.StringVar(&opts.configPath, "config", "", "path to YAML config file (required)")
 	fs.BoolVar(&opts.quiet, "quiet", false, "suppress non-error output")
-	fs.BoolVar(&opts.verbose, "verbose", false, "print the full event stream, including byte-level progress")
+	fs.BoolVar(&opts.verbose, "verbose", false,
+		"print the full event stream, including byte-level progress")
 	fs.BoolVar(&opts.json, "json", false, "format output as newline-delimited JSON")
-	fs.BoolVar(&opts.dryRun, "dry-run", false, "connect, authenticate, and list each endpoint's remote directory; no transfer, no delete, no writes")
+	fs.BoolVar(&opts.dryRun, "dry-run", false,
+		"connect, authenticate, and list each endpoint's remote directory; "+
+			"no transfer, no delete, no writes")
 	fs.BoolVar(&opts.noVerify, "no-verify", false, "disable post-upload size/hash verification")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	fs.Usage = func() {
@@ -151,7 +154,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	p := newPrinter(stdout, stderr, outputModeFor(opts.quiet, opts.verbose), opts.json)
-	events := uploadfun.Upload(ctx, files, endpoints, uploadfun.Options{DryRun: opts.dryRun, NoVerify: opts.noVerify})
+	events := uploadfun.Upload(ctx, files, endpoints, uploadfun.Options{
+		DryRun: opts.dryRun, NoVerify: opts.noVerify,
+	})
 	if processEvents(events, p) {
 		return exitPartialFailure
 	}

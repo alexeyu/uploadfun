@@ -21,7 +21,8 @@ func TestResolveTLSConfig(t *testing.T) {
 			t.Errorf("expected default TLS config with ServerName set, got %+v", cfg)
 		}
 		if cfg.ClientSessionCache == nil {
-			t.Error("expected a default ClientSessionCache so data connections can resume the control connection's TLS session")
+			t.Error("expected a default ClientSessionCache so data connections can " +
+				"resume the control connection's TLS session")
 		}
 	})
 

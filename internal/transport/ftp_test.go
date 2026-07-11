@@ -51,7 +51,8 @@ func TestProgressReader(t *testing.T) {
 	}
 	last := calls[len(calls)-1]
 	if last[0] != int64(len(data)) || last[1] != int64(len(data)) {
-		t.Errorf("expected final progress call to report full size, got sent=%d total=%d", last[0], last[1])
+		t.Errorf("expected final progress call to report full size, got sent=%d total=%d",
+			last[0], last[1])
 	}
 	for i := 1; i < len(calls); i++ {
 		if calls[i][0] <= calls[i-1][0] {

@@ -55,7 +55,9 @@ func (u *transportUploader) Delete(ctx context.Context, remoteName string) error
 	return u.client.Delete(remoteName)
 }
 
-func (u *transportUploader) Upload(ctx context.Context, localPath, remoteName string, progress func(sent, total int64)) error {
+func (u *transportUploader) Upload(
+	ctx context.Context, localPath, remoteName string, progress func(sent, total int64),
+) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
@@ -68,7 +70,9 @@ func (u *transportUploader) Upload(ctx context.Context, localPath, remoteName st
 	return u.client.Upload(remoteName, f, info.Size(), progress)
 }
 
-func (u *transportUploader) Verify(ctx context.Context, localPath, remoteName string) (string, error) {
+func (u *transportUploader) Verify(
+	ctx context.Context, localPath, remoteName string,
+) (string, error) {
 	return u.client.Verify(localPath, remoteName)
 }
 

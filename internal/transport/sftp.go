@@ -120,7 +120,8 @@ func loadPrivateKey(path, passphrase string) (ssh.Signer, error) {
 		return nil, err
 	}
 	if passphrase == "" {
-		return nil, fmt.Errorf("key is passphrase-protected but no password was provided to use as its passphrase: %w", err)
+		return nil, fmt.Errorf(
+			"key is passphrase-protected but no password was provided to use as its passphrase: %w", err)
 	}
 	return ssh.ParsePrivateKeyWithPassphrase(keyBytes, []byte(passphrase))
 }
@@ -132,7 +133,9 @@ func knownHostsCallback() (ssh.HostKeyCallback, error) {
 	}
 	path := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("%s not found or unreadable — connect once with `ssh` to add the host, then retry: %w", path, err)
+		return nil, fmt.Errorf(
+			"%s not found or unreadable — connect once with `ssh` to add the host, then retry: %w",
+			path, err)
 	}
 	return knownhosts.New(path)
 }
@@ -155,7 +158,9 @@ func (c *SFTPClient) Delete(remoteName string) error {
 
 // Upload streams r (size bytes total) to remoteName, invoking progress
 // with cumulative bytes sent as it reads.
-func (c *SFTPClient) Upload(remoteName string, r io.Reader, size int64, progress func(sent, total int64)) error {
+func (c *SFTPClient) Upload(
+	remoteName string, r io.Reader, size int64, progress func(sent, total int64),
+) error {
 	f, err := c.sftp.Create(remoteName)
 	if err != nil {
 		return err

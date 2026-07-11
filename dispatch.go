@@ -39,7 +39,9 @@ var newUploader = func(protocol Protocol) (Uploader, error) {
 	return nil, fmt.Errorf("no transport registered for protocol %q", protocol)
 }
 
-func dispatch(ctx context.Context, files []string, endpoints []Endpoint, opts Options, events chan<- UploadEvent) {
+func dispatch(
+	ctx context.Context, files []string, endpoints []Endpoint, opts Options, events chan<- UploadEvent,
+) {
 	var wg sync.WaitGroup
 	for _, ep := range endpoints {
 		wg.Add(1)
@@ -51,7 +53,9 @@ func dispatch(ctx context.Context, files []string, endpoints []Endpoint, opts Op
 	wg.Wait()
 }
 
-func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options, events chan<- UploadEvent) {
+func runEndpoint(
+	ctx context.Context, ep Endpoint, files []string, opts Options, events chan<- UploadEvent,
+) {
 	up, err := newUploader(ep.Protocol)
 	if err != nil {
 		if opts.DryRun {
@@ -89,7 +93,9 @@ func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options,
 				connErr := up.Connect(connectCtx, ep)
 				cancel()
 				if connErr != nil {
-					events <- FileErrorEvent{Endpoint: ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: connErr}
+					events <- FileErrorEvent{
+						Endpoint: ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: connErr,
+					}
 					if attempt < ep.Attempts {
 						sleepRetryDelay(ctx, ep.RetryDelay)
 					}
@@ -100,7 +106,9 @@ func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options,
 
 			method, upErr := attemptUpload(ctx, up, ep, file, remoteName, opts, events)
 			if upErr != nil {
-				events <- FileErrorEvent{Endpoint: ep.Name, File: file, Attempt: attempt, Reason: upErr.Error(), Err: upErr}
+				events <- FileErrorEvent{
+					Endpoint: ep.Name, File: file, Attempt: attempt, Reason: upErr.Error(), Err: upErr,
+				}
 				_ = up.Disconnect(ctx)
 				connected = false
 				if attempt < ep.Attempts {
@@ -123,7 +131,10 @@ func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options,
 	events <- EndpointDoneEvent{Endpoint: ep.Name, Succeeded: succeeded, Failed: failed}
 }
 
-func attemptUpload(ctx context.Context, up Uploader, ep Endpoint, localPath, remoteName string, opts Options, events chan<- UploadEvent) (verifyMethod string, err error) {
+func attemptUpload(
+	ctx context.Context, up Uploader, ep Endpoint, localPath, remoteName string,
+	opts Options, events chan<- UploadEvent,
+) (verifyMethod string, err error) {
 	if ep.Overwrite == OverwriteDeleteFirst {
 		if err := up.Delete(ctx, remoteName); err != nil {
 			return "", fmt.Errorf("delete existing remote file: %w", err)

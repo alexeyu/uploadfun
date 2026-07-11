@@ -150,7 +150,9 @@ func (DryRunEvent) uploadEvent() {}
 // per Endpoint.Attempts/RetryDelay. Every worker's events land on the
 // returned channel, which is closed once every endpoint worker is done or
 // ctx is canceled.
-func Upload(ctx context.Context, files []string, endpoints []Endpoint, opts Options) <-chan UploadEvent {
+func Upload(
+	ctx context.Context, files []string, endpoints []Endpoint, opts Options,
+) <-chan UploadEvent {
 	events := make(chan UploadEvent)
 	go func() {
 		defer close(events)

@@ -75,7 +75,9 @@ func TestSFTPAuthMethodsPrecedence(t *testing.T) {
 	path := writeTestKey(t, "")
 
 	t.Run("private key preferred when both set", func(t *testing.T) {
-		methods, err := sftpAuthMethods(SFTPDialOptions{PrivateKeyPath: path, Password: "unused-as-login-password"})
+		methods, err := sftpAuthMethods(SFTPDialOptions{
+			PrivateKeyPath: path, Password: "unused-as-login-password",
+		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

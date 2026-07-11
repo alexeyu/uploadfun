@@ -129,7 +129,9 @@ func (c *FTPClient) Delete(remoteName string) error {
 
 // Upload streams r (size bytes total) to remoteName via STOR, invoking
 // progress with cumulative bytes sent as it reads.
-func (c *FTPClient) Upload(remoteName string, r io.Reader, size int64, progress func(sent, total int64)) error {
+func (c *FTPClient) Upload(
+	remoteName string, r io.Reader, size int64, progress func(sent, total int64),
+) error {
 	pr := &progressReader{r: r, total: size, onProgress: progress}
 	return c.conn.Stor(remoteName, pr)
 }

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/textproto"
-	"os"
 	"strconv"
 	"time"
 
@@ -62,51 +61,77 @@ func DialFTP(ctx context.Context, opts FTPDialOptions) (*FTPClient, error) {
 }
 
 func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
-	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(resolvePort(cfg.Port)))
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(resolvePort(cfg.Port, defaultFTPPort)))
 
 	var tlsConfig *tls.Config
 	if cfg.explicitTLS {
 		tlsConfig = resolveTLSConfig(cfg.Host, cfg.tlsConfig)
 	}
 
-	// A custom dial func (used by jlaffaye/ftp for both the control and
-	// data connections) lets us bound the whole connect+login sequence,
-	// not just the TCP dial that DialWithTimeout/DialWithContext cover: a
-	// server that accepts TCP then stalls on the banner, AUTH TLS, or the
-	// USER/PASS exchange would otherwise block forever. Every conn is also
-	// wrapped in a guardedConn so that, once the session is established,
-	// an idle transfer trips the stall timeout instead of hanging.
 	guard := &stallGuard{stallTimeout: cfg.StallTimeout}
-	var ctrlConn net.Conn
-	dialFunc := func(network, address string) (net.Conn, error) {
-		conn, err := (&net.Dialer{Timeout: cfg.ConnectTimeout}).DialContext(ctx, network, address)
-		if err != nil {
-			return nil, err
-		}
-		// The first dial is the control connection: hand back the (guarded)
-		// conn — the library does the AUTH TLS upgrade itself — with a
-		// deadline covering banner/AUTH-TLS/login. Data connections opened
-		// later must not inherit that deadline.
-		if ctrlConn == nil {
-			if cfg.ConnectTimeout > 0 {
-				_ = conn.SetDeadline(time.Now().Add(cfg.ConnectTimeout))
-			}
-			ctrlConn = conn
-			return guard.wrap(conn), nil
-		}
-		// Data connection: with a custom dial func the library skips its
-		// own TLS wrapping, so wrap it here with the same config (shared
-		// ClientSessionCache + ServerName) that lets the data session
-		// resume the control session — pure-ftpd and others require it.
-		if tlsConfig != nil {
-			return tls.Client(guard.wrap(conn), tlsConfig), nil
-		}
-		return guard.wrap(conn), nil
+	d := &ftpDialer{ctx: ctx, timeout: cfg.ConnectTimeout, guard: guard, tlsConfig: tlsConfig}
+
+	conn, err := ftpDialAndLogin(addr, cfg, d)
+	if err != nil {
+		return nil, err
 	}
 
-	dialOpts := []ftp.DialOption{ftp.DialWithDialFunc(dialFunc)}
+	// Session is up: clear the connect deadline and hand transfers over to
+	// the idle stall timeout instead.
+	if d.ctrlConn != nil {
+		clearDeadline(d.ctrlConn)
+	}
+	guard.markEstablished()
+	return &FTPClient{conn: conn}, nil
+}
+
+// ftpDialer builds the custom net dial func jlaffaye/ftp uses for both the
+// control and data connections, capturing the control conn so its
+// connect-phase deadline can be cleared once the session is established.
+type ftpDialer struct {
+	ctx       context.Context
+	timeout   time.Duration
+	guard     *stallGuard
+	tlsConfig *tls.Config
+	ctrlConn  net.Conn
+}
+
+// dial is the func handed to jlaffaye/ftp. Every conn is wrapped in a
+// guardedConn so that, once the session is established, an idle transfer
+// trips the stall timeout instead of hanging.
+func (d *ftpDialer) dial(network, address string) (net.Conn, error) {
+	conn, err := (&net.Dialer{Timeout: d.timeout}).DialContext(d.ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	// The first dial is the control connection: hand back the (guarded)
+	// conn — the library does the AUTH TLS upgrade itself — with a deadline
+	// covering banner/AUTH-TLS/login. Data connections opened later must
+	// not inherit that deadline.
+	if d.ctrlConn == nil {
+		armConnectDeadline(conn, d.timeout)
+		d.ctrlConn = conn
+		return d.guard.wrap(conn), nil
+	}
+	// Data connection: with a custom dial func the library skips its own
+	// TLS wrapping, so wrap it here with the same config (shared
+	// ClientSessionCache + ServerName) that lets the data session resume
+	// the control session — pure-ftpd and others require it.
+	if d.tlsConfig != nil {
+		return tls.Client(d.guard.wrap(conn), d.tlsConfig), nil
+	}
+	return d.guard.wrap(conn), nil
+}
+
+// ftpDialAndLogin opens the FTP control connection through d's custom dial
+// func and authenticates. Routing the dial through d lets us bound the whole
+// connect+login sequence, not just the TCP dial that DialWithTimeout/
+// DialWithContext cover: a server that accepts TCP then stalls on the
+// banner, AUTH TLS, or the USER/PASS exchange would otherwise block forever.
+func ftpDialAndLogin(addr string, cfg dialConfig, d *ftpDialer) (*ftp.ServerConn, error) {
+	dialOpts := []ftp.DialOption{ftp.DialWithDialFunc(d.dial)}
 	if cfg.explicitTLS {
-		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(tlsConfig))
+		dialOpts = append(dialOpts, ftp.DialWithExplicitTLS(d.tlsConfig))
 	}
 
 	conn, err := ftp.Dial(addr, dialOpts...)
@@ -117,20 +142,7 @@ func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 		_ = conn.Quit()
 		return nil, fmt.Errorf("login: %w", err)
 	}
-	// Session is up: clear the connect deadline and hand transfers over to
-	// the idle stall timeout instead.
-	if ctrlConn != nil {
-		_ = ctrlConn.SetDeadline(time.Time{})
-	}
-	guard.markEstablished()
-	return &FTPClient{conn: conn}, nil
-}
-
-func resolvePort(port int) int {
-	if port == 0 {
-		return defaultFTPPort
-	}
-	return port
+	return conn, nil
 }
 
 // resolveTLSConfig fills in ServerName and ClientSessionCache when
@@ -193,37 +205,17 @@ func (c *FTPClient) Size(remoteName string) (int64, error) {
 // FTP/FTPS verification is size-only for v1; method is always "size" on
 // success.
 func (c *FTPClient) Verify(localPath, remoteName string) (method string, err error) {
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return "", fmt.Errorf("stat local file: %w", err)
-	}
-	remoteSize, err := c.Size(remoteName)
-	if err != nil {
-		return "", fmt.Errorf("remote size: %w", err)
-	}
-	if remoteSize != info.Size() {
-		return "", fmt.Errorf("size mismatch: local %d bytes, remote %d bytes", info.Size(), remoteSize)
-	}
-	return "size", nil
+	return verifyBySize(localPath, remoteName, c.Size)
 }
 
-// List returns the names of entries in the current remote directory,
-// used only for --dry-run. Excludes "." and ".." — servers that answer
-// via MLSD (RFC 3659), pure-ftpd among them, include those pseudo-entries
-// and a caller displaying "N entries" shouldn't count them.
+// List returns the names of entries in the current remote directory, used
+// only for --dry-run.
 func (c *FTPClient) List() ([]string, error) {
 	entries, err := c.conn.List("")
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Name == "." || e.Name == ".." {
-			continue
-		}
-		names = append(names, e.Name)
-	}
-	return names, nil
+	return dirEntryNames(entries, func(e *ftp.Entry) string { return e.Name }), nil
 }
 
 // isNotExist reports whether err is an FTP "file unavailable" response

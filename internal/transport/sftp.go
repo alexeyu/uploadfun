@@ -45,6 +45,38 @@ type SFTPClient struct {
 // clear error, matching OpenSSH's own trust-on-first-use flow (`ssh` (or
 // `ssh-keyscan`) into the host once to populate known_hosts, then retry).
 func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
+	cfg, err := sshClientConfig(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	addr := net.JoinHostPort(opts.Host, strconv.Itoa(resolvePort(opts.Port, defaultSFTPPort)))
+	conn, err := (&net.Dialer{Timeout: opts.ConnectTimeout}).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	armConnectDeadline(conn, opts.ConnectTimeout)
+
+	// Wrap the conn so that, once established, an idle SFTP transfer trips
+	// the stall timeout. It stays passive until then, leaving the connect
+	// deadline in force through the handshake and subsystem open.
+	guard := &stallGuard{stallTimeout: opts.StallTimeout}
+	client, err := openSFTP(guard.wrap(conn), addr, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Session is up; clear the connect deadline and hand transfers over to
+	// the idle stall timeout.
+	clearDeadline(conn)
+	guard.markEstablished()
+	return client, nil
+}
+
+// sshClientConfig assembles the SSH client config: the auth methods from
+// the endpoint's password/key and host-key verification against the user's
+// known_hosts.
+func sshClientConfig(opts SFTPDialOptions) (*ssh.ClientConfig, error) {
 	auth, err := sftpAuthMethods(opts)
 	if err != nil {
 		return nil, err
@@ -53,27 +85,18 @@ func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("known_hosts: %w", err)
 	}
-
-	addr := net.JoinHostPort(opts.Host, strconv.Itoa(resolveSFTPPort(opts.Port)))
-	dialer := net.Dialer{Timeout: opts.ConnectTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("dial %s: %w", addr, err)
-	}
-
-	if opts.ConnectTimeout > 0 {
-		_ = conn.SetDeadline(time.Now().Add(opts.ConnectTimeout))
-	}
-	// Wrap the conn so that, once established, an idle SFTP transfer trips
-	// the stall timeout. It stays passive until then, leaving the connect
-	// deadline set above in force through the handshake and subsystem open.
-	guard := &stallGuard{stallTimeout: opts.StallTimeout}
-	sshConn, chans, reqs, err := ssh.NewClientConn(guard.wrap(conn), addr, &ssh.ClientConfig{
+	return &ssh.ClientConfig{
 		User:            opts.Username,
 		Auth:            auth,
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         opts.ConnectTimeout,
-	})
+	}, nil
+}
+
+// openSFTP performs the SSH handshake over conn and opens an SFTP subsystem
+// on top, returning a ready client. conn is closed on any failure.
+func openSFTP(conn net.Conn, addr string, cfg *ssh.ClientConfig) (*SFTPClient, error) {
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("ssh handshake: %w", err)
@@ -85,13 +108,6 @@ func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("open sftp session: %w", err)
 	}
-	// Session is up (handshake + subsystem open both bounded by the connect
-	// deadline); clear it and hand transfers over to the idle stall timeout.
-	if opts.ConnectTimeout > 0 {
-		_ = conn.SetDeadline(time.Time{})
-	}
-	guard.markEstablished()
-
 	return &SFTPClient{sshConn: client, sftp: sftpClient}, nil
 }
 
@@ -194,23 +210,11 @@ func (c *SFTPClient) Size(remoteName string) (int64, error) {
 // XCRC/XMD5/XSHA1 extensions, so this is size-only, same as the FTP/FTPS
 // transports for v1 (see ARCHITECTURE.md "Verification").
 func (c *SFTPClient) Verify(localPath, remoteName string) (method string, err error) {
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return "", fmt.Errorf("stat local file: %w", err)
-	}
-	remoteSize, err := c.Size(remoteName)
-	if err != nil {
-		return "", fmt.Errorf("remote size: %w", err)
-	}
-	if remoteSize != info.Size() {
-		return "", fmt.Errorf("size mismatch: local %d bytes, remote %d bytes", info.Size(), remoteSize)
-	}
-	return "size", nil
+	return verifyBySize(localPath, remoteName, c.Size)
 }
 
-// List returns the names of entries in the current remote directory,
-// used only for --dry-run. Excludes "." and ".." should a server include
-// them (same reasoning as FTPClient.List).
+// List returns the names of entries in the current remote directory, used
+// only for --dry-run.
 func (c *SFTPClient) List() ([]string, error) {
 	cwd, err := c.sftp.Getwd()
 	if err != nil {
@@ -220,19 +224,5 @@ func (c *SFTPClient) List() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Name() == "." || e.Name() == ".." {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	return names, nil
-}
-
-func resolveSFTPPort(port int) int {
-	if port == 0 {
-		return defaultSFTPPort
-	}
-	return port
+	return dirEntryNames(entries, os.FileInfo.Name), nil
 }

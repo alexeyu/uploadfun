@@ -6,11 +6,11 @@ import (
 )
 
 func TestResolvePort(t *testing.T) {
-	if got := resolvePort(0); got != defaultFTPPort {
-		t.Errorf("resolvePort(0) = %d, want default %d", got, defaultFTPPort)
+	if got := resolvePort(0, defaultFTPPort); got != defaultFTPPort {
+		t.Errorf("resolvePort(0, default) = %d, want default %d", got, defaultFTPPort)
 	}
-	if got := resolvePort(2121); got != 2121 {
-		t.Errorf("resolvePort(2121) = %d, want 2121", got)
+	if got := resolvePort(2121, defaultFTPPort); got != 2121 {
+		t.Errorf("resolvePort(2121, default) = %d, want 2121", got)
 	}
 }
 

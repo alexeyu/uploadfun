@@ -12,11 +12,11 @@ import (
 )
 
 func TestResolveSFTPPort(t *testing.T) {
-	if got := resolveSFTPPort(0); got != defaultSFTPPort {
-		t.Errorf("resolveSFTPPort(0) = %d, want default %d", got, defaultSFTPPort)
+	if got := resolvePort(0, defaultSFTPPort); got != defaultSFTPPort {
+		t.Errorf("resolvePort(0, sftp default) = %d, want default %d", got, defaultSFTPPort)
 	}
-	if got := resolveSFTPPort(2222); got != 2222 {
-		t.Errorf("resolveSFTPPort(2222) = %d, want 2222", got)
+	if got := resolvePort(2222, defaultSFTPPort); got != 2222 {
+		t.Errorf("resolvePort(2222, sftp default) = %d, want 2222", got)
 	}
 }
 

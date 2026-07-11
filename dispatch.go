@@ -71,101 +71,154 @@ func runEndpoint(
 		return
 	}
 
-	connected := false
-	defer func() {
-		if connected {
-			_ = up.Disconnect(ctx)
-		}
-	}()
+	(&endpointWorker{ctx: ctx, ep: ep, opts: opts, events: events, up: up}).run(files)
+}
+
+// endpointWorker uploads a batch of files to one endpoint over a single
+// reused connection, reconnecting and retrying per the endpoint's
+// Attempts/RetryDelay budget. It owns the connection's lifecycle so the
+// retry loop and file iteration don't have to track it directly.
+type endpointWorker struct {
+	ctx    context.Context
+	ep     Endpoint
+	opts   Options
+	events chan<- UploadEvent
+	up     Uploader
+
+	connected bool
+}
+
+// run uploads every file in order, tallies the outcome, and emits the
+// terminating EndpointDoneEvent.
+func (w *endpointWorker) run(files []string) {
+	defer w.disconnect()
 
 	succeeded, failed := 0, 0
-	for _, file := range files {
-		if ctx.Err() != nil {
-			failed += len(files) - succeeded - failed
+	for i, file := range files {
+		if w.ctx.Err() != nil {
+			failed += len(files) - i
 			break
 		}
-
-		remoteName := filepath.Base(file)
-		ok := false
-		for attempt := 1; attempt <= ep.Attempts; attempt++ {
-			// Stop retrying once canceled instead of burning the remaining
-			// budget on connects that fail instantly against a dead ctx,
-			// each emitting a misleading "connect" FileErrorEvent.
-			if ctx.Err() != nil {
-				break
-			}
-			if !connected {
-				connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
-				connErr := up.Connect(connectCtx, ep)
-				cancel()
-				if connErr != nil {
-					// A connect that failed only because ctx was canceled
-					// isn't a real endpoint failure — don't report it.
-					if ctx.Err() != nil {
-						break
-					}
-					events <- FileErrorEvent{
-						Endpoint: ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: connErr,
-					}
-					if attempt < ep.Attempts {
-						sleepRetryDelay(ctx, ep.RetryDelay)
-					}
-					continue
-				}
-				connected = true
-			}
-
-			method, upErr := attemptUpload(ctx, up, ep, file, remoteName, opts, events)
-			if upErr != nil {
-				events <- FileErrorEvent{
-					Endpoint: ep.Name, File: file, Attempt: attempt, Reason: upErr.Error(), Err: upErr,
-				}
-				_ = up.Disconnect(ctx)
-				connected = false
-				if attempt < ep.Attempts {
-					sleepRetryDelay(ctx, ep.RetryDelay)
-				}
-				continue
-			}
-
-			events <- FileSuccessEvent{Endpoint: ep.Name, File: file, VerifyMethod: method}
-			ok = true
-			break
-		}
-		if ok {
+		if w.uploadFile(file) {
 			succeeded++
 		} else {
 			failed++
 		}
 	}
 
-	events <- EndpointDoneEvent{Endpoint: ep.Name, Succeeded: succeeded, Failed: failed}
+	w.events <- EndpointDoneEvent{Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed}
 }
 
-func attemptUpload(
-	ctx context.Context, up Uploader, ep Endpoint, localPath, remoteName string,
-	opts Options, events chan<- UploadEvent,
-) (verifyMethod string, err error) {
-	if ep.Overwrite == OverwriteDeleteFirst {
-		if err := up.Delete(ctx, remoteName); err != nil {
+// uploadFile uploads one file, retrying up to the endpoint's Attempts
+// budget, and reports whether it ultimately succeeded.
+func (w *endpointWorker) uploadFile(file string) bool {
+	remoteName := filepath.Base(file)
+	for attempt := 1; attempt <= w.ep.Attempts; attempt++ {
+		// Stop retrying once canceled instead of burning the remaining
+		// budget on connects that fail instantly against a dead ctx,
+		// each emitting a misleading "connect" FileErrorEvent.
+		if w.ctx.Err() != nil {
+			return false
+		}
+
+		if !w.connected {
+			switch w.connect(file, attempt) {
+			case connectCanceled:
+				return false
+			case connectFailed:
+				w.sleepBeforeRetry(attempt)
+				continue
+			}
+		}
+
+		method, err := w.transfer(file, remoteName)
+		if err != nil {
+			w.events <- FileErrorEvent{
+				Endpoint: w.ep.Name, File: file, Attempt: attempt, Reason: err.Error(), Err: err,
+			}
+			w.disconnect()
+			w.sleepBeforeRetry(attempt)
+			continue
+		}
+
+		w.events <- FileSuccessEvent{Endpoint: w.ep.Name, File: file, VerifyMethod: method}
+		return true
+	}
+	return false
+}
+
+type connectResult int
+
+const (
+	connectOK connectResult = iota
+	connectFailed
+	connectCanceled
+)
+
+// connect establishes the reused connection, bounding the whole
+// connect+login sequence with the endpoint's ConnectTimeout. A failure
+// caused only by ctx cancellation reports connectCanceled and emits no
+// event, since it isn't a real endpoint failure.
+func (w *endpointWorker) connect(file string, attempt int) connectResult {
+	connectCtx, cancel := context.WithTimeout(w.ctx, w.ep.ConnectTimeout)
+	err := w.up.Connect(connectCtx, w.ep)
+	cancel()
+	if err != nil {
+		if w.ctx.Err() != nil {
+			return connectCanceled
+		}
+		w.events <- FileErrorEvent{
+			Endpoint: w.ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: err,
+		}
+		return connectFailed
+	}
+	w.connected = true
+	return connectOK
+}
+
+// transfer runs the delete/upload/verify sequence for one file on the
+// live connection, returning the verification method used ("" if
+// verification was skipped) or the first error encountered.
+func (w *endpointWorker) transfer(localPath, remoteName string) (verifyMethod string, err error) {
+	if w.ep.Overwrite == OverwriteDeleteFirst {
+		if err := w.up.Delete(w.ctx, remoteName); err != nil {
 			return "", fmt.Errorf("delete existing remote file: %w", err)
 		}
 	}
 
-	if err := up.Upload(ctx, localPath, remoteName, func(sent, total int64) {
-		events <- ProgressEvent{Endpoint: ep.Name, File: localPath, BytesSent: sent, TotalBytes: total}
+	if err := w.up.Upload(w.ctx, localPath, remoteName, func(sent, total int64) {
+		w.events <- ProgressEvent{
+			Endpoint: w.ep.Name, File: localPath, BytesSent: sent, TotalBytes: total,
+		}
 	}); err != nil {
 		return "", fmt.Errorf("upload: %w", err)
 	}
 
-	if opts.NoVerify {
+	if w.opts.NoVerify {
 		return "", nil
 	}
-	method, err := up.Verify(ctx, localPath, remoteName)
+	method, err := w.up.Verify(w.ctx, localPath, remoteName)
 	if err != nil {
 		return "", fmt.Errorf("verify: %w", err)
 	}
 	return method, nil
+}
+
+// disconnect closes the connection if one is open, resetting state so the
+// next attempt reconnects from scratch. Safe to call when not connected.
+func (w *endpointWorker) disconnect() {
+	if w.connected {
+		_ = w.up.Disconnect(w.ctx)
+		w.connected = false
+	}
+}
+
+// sleepBeforeRetry waits RetryDelay before the next attempt, unless this
+// was the final attempt (in which case there's nothing to wait for).
+func (w *endpointWorker) sleepBeforeRetry(attempt int) {
+	if attempt < w.ep.Attempts {
+		sleepRetryDelay(w.ctx, w.ep.RetryDelay)
+	}
 }
 
 // runDryRun performs the --dry-run connectivity check for one endpoint:

@@ -30,9 +30,18 @@ type fakeUploader struct {
 	listResult []string
 	listErr    error
 	listCalls  int
+
+	// beforeUpload, if set, runs at the start of each Upload with the
+	// 1-based call number — a hook for tests to cancel mid-transfer.
+	beforeUpload func(call int)
 }
 
 func (f *fakeUploader) Connect(ctx context.Context, ep Endpoint) error {
+	// Real transports honor ctx at connect time; mirror that so tests can
+	// exercise cancellation during the retry loop's reconnect.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.connectCalls++
@@ -66,6 +75,9 @@ func (f *fakeUploader) Upload(
 	f.uploadCalls++
 	calls := f.uploadCalls
 	f.mu.Unlock()
+	if f.beforeUpload != nil {
+		f.beforeUpload(calls)
+	}
 	progress(50, 100)
 	progress(100, 100)
 	if calls <= f.failUploadN {
@@ -342,6 +354,46 @@ func TestDispatchContextCanceledBeforeStart(t *testing.T) {
 	}
 	if done.Succeeded != 0 || done.Failed != 2 {
 		t.Errorf("expected every file counted as failed once canceled, got %+v", done)
+	}
+}
+
+func TestDispatchCancelDuringRetryEmitsNoSpuriousErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Every upload fails, so each attempt disconnects and reconnects —
+	// the retry path. Cancel while the first attempt is mid-upload.
+	f := &fakeUploader{failUploadN: 1000}
+	f.beforeUpload = func(call int) {
+		if call == 1 {
+			cancel()
+		}
+	}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 5
+	events := collectEvents(Upload(ctx, []string{"a.jpg"}, []Endpoint{ep}, Options{NoVerify: true}))
+
+	counts := countByType(events)
+	// Only the first attempt's genuine upload failure should be reported;
+	// the remaining attempts must not run once canceled.
+	if counts["error"] > 1 {
+		t.Errorf("expected at most one error event after cancellation, got %d", counts["error"])
+	}
+	for _, e := range events {
+		if fe, ok := e.(FileErrorEvent); ok && fe.Reason == "connect" {
+			t.Errorf("unexpected spurious connect error after cancellation: %+v", fe)
+		}
+	}
+
+	var done EndpointDoneEvent
+	for _, e := range events {
+		if d, ok := e.(EndpointDoneEvent); ok {
+			done = d
+		}
+	}
+	if done.Succeeded != 0 || done.Failed != 1 {
+		t.Errorf("expected the canceled file counted as failed, got %+v", done)
 	}
 }
 

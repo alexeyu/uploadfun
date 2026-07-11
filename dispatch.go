@@ -88,11 +88,22 @@ func runEndpoint(
 		remoteName := filepath.Base(file)
 		ok := false
 		for attempt := 1; attempt <= ep.Attempts; attempt++ {
+			// Stop retrying once canceled instead of burning the remaining
+			// budget on connects that fail instantly against a dead ctx,
+			// each emitting a misleading "connect" FileErrorEvent.
+			if ctx.Err() != nil {
+				break
+			}
 			if !connected {
 				connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
 				connErr := up.Connect(connectCtx, ep)
 				cancel()
 				if connErr != nil {
+					// A connect that failed only because ctx was canceled
+					// isn't a real endpoint failure — don't report it.
+					if ctx.Err() != nil {
+						break
+					}
 					events <- FileErrorEvent{
 						Endpoint: ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: connErr,
 					}

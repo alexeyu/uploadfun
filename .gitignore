@@ -1,7 +1,7 @@
 /dist/
 coverage.out
 *.test
-uploadfun
+/uploadfun
 
 # local planning notes and agent definitions — not part of the published repo
 *.md

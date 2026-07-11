@@ -1,0 +1,35 @@
+# Copy this file to config.yml (or any path) and fill in your own
+# endpoints. Run with:
+#
+#   uploadfun path/to/file-or-dir --config config.yml
+#
+# Add --dry-run first to check connectivity/credentials without
+# transferring anything.
+
+endpoints:
+  - name: shutterstock
+    protocol: ftps
+    host: ftp.shutterstock.com
+    port: 21                    # optional; defaults to the protocol's standard port
+    username: myuser
+    password: ${SHUTTERSTOCK_FTP_PASSWORD}
+    overwrite: delete-first     # default; alternative: direct
+
+  - name: dreamstime
+    protocol: sftp
+    host: sftp.dreamstime.com
+    username: myuser
+    private_key: ~/.ssh/id_ed25519
+
+  - name: legacy-agency
+    protocol: ftp
+    host: ftp.legacy-agency.example
+    username: myuser
+    password: hunter2           # literal secrets allowed, not forced to env vars
+
+# Global defaults, overridable per-endpoint by adding the same key
+# under an individual endpoint above.
+attempts: 3          # total tries per file
+retry_delay: 2s
+connect_timeout: 30s
+stall_timeout: 5m

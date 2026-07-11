@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Pre-commit hook: keep commits formatted and vet-clean so CI's
+# golangci-lint pass never fails on something a local check would catch.
+#
+# Enable it once per clone with:  make hooks
+# (which runs: git config core.hooksPath .githooks)
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Full CI parity when the linter is installed: golangci-lint@v2.12 runs
+# gofmt + goimports + lll, matching .github/workflows/ci.yml.
+if command -v golangci-lint >/dev/null 2>&1; then
+	exec golangci-lint run
+fi
+
+# Fallback when golangci-lint isn't installed. gofmt is the check that
+# would have caught the formatting miss; goimports/lll are only enforced
+# by the linter, so install golangci-lint for complete coverage.
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then
+	echo "pre-commit: these files are not gofmt-clean:" >&2
+	echo "$unformatted" >&2
+	echo "fix with: gofmt -w ." >&2
+	exit 1
+fi
+
+go vet ./...

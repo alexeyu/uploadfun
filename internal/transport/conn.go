@@ -12,7 +12,7 @@ import (
 // wraps from passive to idle-timeout enforcement.
 type stallGuard struct {
 	stallTimeout time.Duration
-	established   atomic.Bool
+	established  atomic.Bool
 }
 
 // wrap returns c wrapped so its reads and writes enforce the stall timeout

@@ -52,7 +52,7 @@ func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
 	fs.BoolVar(&opts.dryRun, "dry-run", false, "connect, authenticate, and list each endpoint's remote directory; no transfer, no delete, no writes")
 	fs.BoolVar(&opts.noVerify, "no-verify", false, "disable post-upload size/hash verification")
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: %s <path>... --config <file> [flags]\n\n", fs.Name())
+		_, _ = fmt.Fprintf(stderr, "Usage: %s <path>... --config <file> [flags]\n\n", fs.Name())
 		fs.PrintDefaults()
 	}
 
@@ -64,19 +64,19 @@ func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
 	}
 
 	if opts.quiet && opts.verbose {
-		fmt.Fprintln(stderr, "uploadfun: --quiet and --verbose are mutually exclusive")
+		_, _ = fmt.Fprintln(stderr, "uploadfun: --quiet and --verbose are mutually exclusive")
 		fs.Usage()
 		return nil, exitUsageError
 	}
 	if opts.configPath == "" {
-		fmt.Fprintln(stderr, "uploadfun: --config is required")
+		_, _ = fmt.Fprintln(stderr, "uploadfun: --config is required")
 		fs.Usage()
 		return nil, exitUsageError
 	}
 
 	opts.paths = fs.Args()
 	if len(opts.paths) == 0 {
-		fmt.Fprintln(stderr, "uploadfun: at least one file or directory argument is required")
+		_, _ = fmt.Fprintln(stderr, "uploadfun: at least one file or directory argument is required")
 		fs.Usage()
 		return nil, exitUsageError
 	}
@@ -129,14 +129,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	files, err := expandPaths(opts.paths)
 	if err != nil {
-		fmt.Fprintln(stderr, "uploadfun:", err)
+		_, _ = fmt.Fprintln(stderr, "uploadfun:", err)
 		return exitUsageError
 	}
 
 	endpoints, err := uploadfun.LoadConfig(opts.configPath)
 	if err != nil {
-		fmt.Fprintln(stderr, "uploadfun: config error:")
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, "uploadfun: config error:")
+		_, _ = fmt.Fprintln(stderr, err)
 		return exitConfigError
 	}
 

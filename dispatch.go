@@ -70,7 +70,7 @@ func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options,
 	connected := false
 	defer func() {
 		if connected {
-			up.Disconnect(ctx)
+			_ = up.Disconnect(ctx)
 		}
 	}()
 
@@ -101,7 +101,7 @@ func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options,
 			method, upErr := attemptUpload(ctx, up, ep, file, remoteName, opts, events)
 			if upErr != nil {
 				events <- FileErrorEvent{Endpoint: ep.Name, File: file, Attempt: attempt, Reason: upErr.Error(), Err: upErr}
-				up.Disconnect(ctx)
+				_ = up.Disconnect(ctx)
 				connected = false
 				if attempt < ep.Attempts {
 					sleepRetryDelay(ctx, ep.RetryDelay)
@@ -158,7 +158,7 @@ func runDryRun(ctx context.Context, up Uploader, ep Endpoint, events chan<- Uplo
 		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
 		return
 	}
-	defer up.Disconnect(ctx)
+	defer func() { _ = up.Disconnect(ctx) }()
 
 	entries, err := up.List(ctx)
 	if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ func TestRunConfigError(t *testing.T) {
 	writeFile(t, inputFile, "data")
 
 	var stdout, stderr bytes.Buffer
-	code := run(nil, []string{"--config", "/nonexistent/config.yaml", inputFile}, &stdout, &stderr)
+	code := run(context.Background(), []string{"--config", "/nonexistent/config.yaml", inputFile}, &stdout, &stderr)
 	if code != exitConfigError {
 		t.Errorf("expected exitConfigError, got %d", code)
 	}
@@ -146,7 +147,7 @@ func TestRunUsageErrorForMissingInputPath(t *testing.T) {
 	writeFile(t, configPath, "endpoints:\n  - name: a\n    protocol: ftp\n    host: h\n    username: u\n    password: p\n")
 
 	var stdout, stderr bytes.Buffer
-	code := run(nil, []string{"--config", configPath, "/nonexistent/input.jpg"}, &stdout, &stderr)
+	code := run(context.Background(), []string{"--config", configPath, "/nonexistent/input.jpg"}, &stdout, &stderr)
 	if code != exitUsageError {
 		t.Errorf("expected exitUsageError, got %d", code)
 	}

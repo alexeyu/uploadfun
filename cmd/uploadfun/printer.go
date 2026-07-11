@@ -101,7 +101,7 @@ func (p *printer) write(w io.Writer, ev uploadfun.UploadEvent, text string) {
 		_ = json.NewEncoder(w).Encode(jsonPayload(ev))
 		return
 	}
-	fmt.Fprintln(w, text)
+	_, _ = fmt.Fprintln(w, text)
 }
 
 // jsonPayload adds a "type" discriminator field so newline-delimited

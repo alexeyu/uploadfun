@@ -56,15 +56,23 @@ func TestMain(m *testing.M) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(itHome)
-	os.Setenv("HOME", itHome) // knownHostsCallback reads $HOME/.ssh/known_hosts
+	// knownHostsCallback reads $HOME/.ssh/known_hosts.
+	if err := os.Setenv("HOME", itHome); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	stopFTP := startPureFTPD()
-	defer stopFTP()
 	stopSFTP := startAtmozSFTP()
-	defer stopSFTP()
 
-	os.Exit(m.Run())
+	// Deferred cleanup would never run here since os.Exit skips defers,
+	// so clean up explicitly before exiting rather than deferring it.
+	code := m.Run()
+	stopSFTP()
+	stopFTP()
+	_ = os.RemoveAll(itHome)
+
+	os.Exit(code)
 }
 
 func mustRunDocker(args ...string) {
@@ -80,7 +88,7 @@ func waitForPort(addr string, timeout time.Duration) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(300 * time.Millisecond)
@@ -111,7 +119,7 @@ func startPureFTPD() func() {
 	)
 	waitForPort(fmt.Sprintf("127.0.0.1:%d", ftpControlPort), 30*time.Second)
 
-	return func() { exec.Command("docker", "rm", "-f", ftpContainerName).Run() }
+	return func() { _ = exec.Command("docker", "rm", "-f", ftpContainerName).Run() }
 }
 
 func startAtmozSFTP() func() {
@@ -150,7 +158,7 @@ func startAtmozSFTP() func() {
 		os.Exit(1)
 	}
 
-	return func() { exec.Command("docker", "rm", "-f", sftpContainerName).Run() }
+	return func() { _ = exec.Command("docker", "rm", "-f", sftpContainerName).Run() }
 }
 
 // verifyingUploader is the subset of FTPClient/SFTPClient that
@@ -226,7 +234,7 @@ func TestIntegrationFTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DialFTP: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	exerciseUploadDeleteVerify(t, client, "payload.txt")
 }
@@ -244,7 +252,7 @@ func TestIntegrationFTPS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DialFTPS: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	exerciseUploadDeleteVerify(t, client, "payload.txt")
 }
@@ -260,7 +268,7 @@ func TestIntegrationSFTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DialSFTP: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// atmoz/sftp chroots the user at their home directory, which (per
 	// OpenSSH's ChrootDirectory rules) must not itself be writable — only

@@ -160,7 +160,7 @@ func (c *SFTPClient) Upload(remoteName string, r io.Reader, size int64, progress
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	pr := &progressReader{r: r, total: size, onProgress: progress}
 	_, err = io.Copy(f, pr)

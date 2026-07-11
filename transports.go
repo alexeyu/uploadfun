@@ -60,7 +60,7 @@ func (u *transportUploader) Upload(ctx context.Context, localPath, remoteName st
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return err

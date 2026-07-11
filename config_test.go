@@ -133,7 +133,7 @@ endpoints:
 }
 
 func TestLoadConfigMissingEnvVar(t *testing.T) {
-	os.Unsetenv("DOES_NOT_EXIST_XYZ")
+	_ = os.Unsetenv("DOES_NOT_EXIST_XYZ")
 	path := writeConfig(t, `
 endpoints:
   - name: a

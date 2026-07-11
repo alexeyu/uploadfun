@@ -282,9 +282,12 @@ func TestDispatchOverwriteModes(t *testing.T) {
 
 func TestDispatchUnregisteredProtocol(t *testing.T) {
 	// Deliberately don't register a fake transport: exercises the
-	// no-transport-for-protocol path that today covers any protocol,
-	// since real transports aren't wired in until a later build step.
+	// no-transport-for-protocol path via a Protocol value config
+	// validation would never let through (LoadConfig rejects anything
+	// other than ftp/ftps/sftp), but Upload is a public API a caller
+	// could still invoke directly with one.
 	ep := testEndpoint("ep1")
+	ep.Protocol = Protocol("bogus")
 	events := collectEvents(Upload(context.Background(), []string{"a.jpg", "b.jpg"}, []Endpoint{ep}, Options{}))
 
 	counts := countByType(events)

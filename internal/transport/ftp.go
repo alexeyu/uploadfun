@@ -87,11 +87,28 @@ func resolvePort(port int) int {
 	return port
 }
 
+// resolveTLSConfig fills in ServerName and ClientSessionCache when
+// missing, on a clone so a caller-supplied *tls.Config is never mutated.
+// Both matter beyond cosmetics: Go's crypto/tls only attempts session
+// resumption when ServerName is non-empty (it's part of the session
+// cache key) and ClientSessionCache is set. Servers that enforce "the
+// data connection must resume the control connection's TLS session" as
+// an anti-hijacking measure — pure-ftpd among them — silently accept the
+// data connection's TCP handshake and then drop it once the session
+// fails to match, which surfaces to callers as a bare io.EOF on
+// upload/download with no indication it was a TLS policy rejection.
 func resolveTLSConfig(host string, cfg *tls.Config) *tls.Config {
+	resolved := &tls.Config{}
 	if cfg != nil {
-		return cfg
+		resolved = cfg.Clone()
 	}
-	return &tls.Config{ServerName: host}
+	if resolved.ServerName == "" {
+		resolved.ServerName = host
+	}
+	if resolved.ClientSessionCache == nil {
+		resolved.ClientSessionCache = tls.NewLRUClientSessionCache(4)
+	}
+	return resolved
 }
 
 // Close ends the session with a QUIT.

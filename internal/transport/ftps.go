@@ -17,7 +17,10 @@ type FTPSDialOptions struct {
 	Username       string
 	Password       string
 	ConnectTimeout time.Duration
-	// TLSConfig overrides the default (ServerName set to Host). Optional.
+	// TLSConfig overrides the default. Optional; any of ServerName or
+	// ClientSessionCache left unset are filled in automatically (see
+	// resolveTLSConfig) — both are required for many servers' data
+	// connections to work at all, not just cosmetic defaults.
 	TLSConfig *tls.Config
 }
 

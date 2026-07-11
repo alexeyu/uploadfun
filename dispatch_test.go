@@ -26,6 +26,10 @@ type fakeUploader struct {
 	verifyMethod string
 
 	disconnectCalls int
+
+	listResult []string
+	listErr    error
+	listCalls  int
 }
 
 func (f *fakeUploader) Connect(ctx context.Context, ep Endpoint) error {
@@ -80,7 +84,10 @@ func (f *fakeUploader) Verify(ctx context.Context, localPath, remoteName string)
 }
 
 func (f *fakeUploader) List(ctx context.Context) ([]string, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listCalls++
+	return f.listResult, f.listErr
 }
 
 // withFakeUploader registers f as the transport for every protocol for
@@ -323,5 +330,75 @@ func TestDispatchContextCanceledBeforeStart(t *testing.T) {
 	}
 	if done.Succeeded != 0 || done.Failed != 2 {
 		t.Errorf("expected every file counted as failed once canceled, got %+v", done)
+	}
+}
+
+func TestDispatchDryRunSuccess(t *testing.T) {
+	f := &fakeUploader{listResult: []string{"existing1.jpg", "existing2.jpg"}}
+	withFakeUploader(t, f)
+
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 event for a dry run, got %d: %+v", len(events), events)
+	}
+	dr, ok := events[0].(DryRunEvent)
+	if !ok {
+		t.Fatalf("expected a DryRunEvent, got %T", events[0])
+	}
+	if dr.Err != nil {
+		t.Errorf("expected no error, got %v", dr.Err)
+	}
+	if len(dr.Entries) != 2 {
+		t.Errorf("expected 2 entries, got %v", dr.Entries)
+	}
+
+	if f.uploadCalls != 0 || f.deleteCalls != 0 {
+		t.Errorf("expected no upload/delete calls during a dry run, got uploadCalls=%d deleteCalls=%d", f.uploadCalls, f.deleteCalls)
+	}
+	if f.listCalls != 1 {
+		t.Errorf("expected exactly 1 List call, got %d", f.listCalls)
+	}
+	if f.disconnectCalls != 1 {
+		t.Errorf("expected exactly 1 disconnect, got %d", f.disconnectCalls)
+	}
+}
+
+func TestDispatchDryRunConnectFailure(t *testing.T) {
+	f := &fakeUploader{failConnectN: 999}
+	withFakeUploader(t, f)
+
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 event, got %d: %+v", len(events), events)
+	}
+	dr, ok := events[0].(DryRunEvent)
+	if !ok {
+		t.Fatalf("expected a DryRunEvent, got %T", events[0])
+	}
+	if dr.Err == nil {
+		t.Error("expected a connect error")
+	}
+	if f.listCalls != 0 {
+		t.Errorf("expected List not to be called after a connect failure, got %d calls", f.listCalls)
+	}
+}
+
+func TestDispatchDryRunListFailure(t *testing.T) {
+	f := &fakeUploader{listErr: errors.New("list failed")}
+	withFakeUploader(t, f)
+
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true}))
+
+	dr, ok := events[0].(DryRunEvent)
+	if !ok {
+		t.Fatalf("expected a DryRunEvent, got %T", events[0])
+	}
+	if dr.Err == nil {
+		t.Error("expected a list error")
+	}
+	if f.disconnectCalls != 1 {
+		t.Errorf("expected disconnect even after a list failure, got %d", f.disconnectCalls)
 	}
 }

@@ -160,7 +160,9 @@ func (c *FTPClient) Verify(localPath, remoteName string) (method string, err err
 }
 
 // List returns the names of entries in the current remote directory,
-// used only for --dry-run.
+// used only for --dry-run. Excludes "." and ".." — servers that answer
+// via MLSD (RFC 3659), pure-ftpd among them, include those pseudo-entries
+// and a caller displaying "N entries" shouldn't count them.
 func (c *FTPClient) List() ([]string, error) {
 	entries, err := c.conn.List("")
 	if err != nil {
@@ -168,6 +170,9 @@ func (c *FTPClient) List() ([]string, error) {
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if e.Name == "." || e.Name == ".." {
+			continue
+		}
 		names = append(names, e.Name)
 	}
 	return names, nil

@@ -41,13 +41,21 @@ func newPrinter(stdout, stderr io.Writer, mode outputMode, jsonOutput bool) *pri
 }
 
 // processEvents drains events, printing each per the printer's mode, and
-// reports whether any endpoint finished with at least one failed file —
-// the exit-code-1 condition.
+// reports whether any endpoint finished with at least one failed file
+// (or, for --dry-run, at least one endpoint that failed to connect/
+// authenticate/list) — the exit-code-1 condition.
 func processEvents(events <-chan uploadfun.UploadEvent, p *printer) (failed bool) {
 	for ev := range events {
 		p.handle(ev)
-		if d, ok := ev.(uploadfun.EndpointDoneEvent); ok && d.Failed > 0 {
-			failed = true
+		switch e := ev.(type) {
+		case uploadfun.EndpointDoneEvent:
+			if e.Failed > 0 {
+				failed = true
+			}
+		case uploadfun.DryRunEvent:
+			if e.Err != nil {
+				failed = true
+			}
 		}
 	}
 	return failed
@@ -75,6 +83,15 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 	case uploadfun.EndpointDoneEvent:
 		if p.mode != modeQuiet {
 			p.write(p.stdout, e, fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed))
+		}
+	case uploadfun.DryRunEvent:
+		if e.Err != nil {
+			// Always print, even in --quiet, same as FileErrorEvent.
+			p.write(p.stderr, e, fmt.Sprintf("[%s] dry-run failed: %s", e.Endpoint, e.Err))
+			return
+		}
+		if p.mode != modeQuiet {
+			p.write(p.stdout, e, fmt.Sprintf("[%s] dry-run ok: %d entries in remote directory", e.Endpoint, len(e.Entries)))
 		}
 	}
 }
@@ -112,6 +129,16 @@ func jsonPayload(ev uploadfun.UploadEvent) any {
 			Type string `json:"type"`
 			uploadfun.EndpointDoneEvent
 		}{"endpoint_done", e}
+	case uploadfun.DryRunEvent:
+		errText := ""
+		if e.Err != nil {
+			errText = e.Err.Error()
+		}
+		return struct {
+			Type string `json:"type"`
+			uploadfun.DryRunEvent
+			Error string `json:"error,omitempty"`
+		}{"dry_run", e, errText}
 	default:
 		return nil
 	}

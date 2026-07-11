@@ -54,7 +54,16 @@ func dispatch(ctx context.Context, files []string, endpoints []Endpoint, opts Op
 func runEndpoint(ctx context.Context, ep Endpoint, files []string, opts Options, events chan<- UploadEvent) {
 	up, err := newUploader(ep.Protocol)
 	if err != nil {
-		failAllFiles(ep, files, err, events)
+		if opts.DryRun {
+			events <- DryRunEvent{Endpoint: ep.Name, Err: err}
+		} else {
+			failAllFiles(ep, files, err, events)
+		}
+		return
+	}
+
+	if opts.DryRun {
+		runDryRun(ctx, up, ep, events)
 		return
 	}
 
@@ -135,6 +144,28 @@ func attemptUpload(ctx context.Context, up Uploader, ep Endpoint, localPath, rem
 		return "", fmt.Errorf("verify: %w", err)
 	}
 	return method, nil
+}
+
+// runDryRun performs the --dry-run connectivity check for one endpoint:
+// connect, authenticate, list the remote directory, disconnect — never
+// touching files, matching "no transfer, no delete, no writes" (see
+// ARCHITECTURE.md "CLI" other flags).
+func runDryRun(ctx context.Context, up Uploader, ep Endpoint, events chan<- UploadEvent) {
+	connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
+	err := up.Connect(connectCtx, ep)
+	cancel()
+	if err != nil {
+		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
+		return
+	}
+	defer up.Disconnect(ctx)
+
+	entries, err := up.List(ctx)
+	if err != nil {
+		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
+		return
+	}
+	events <- DryRunEvent{Endpoint: ep.Name, Entries: entries}
 }
 
 func failAllFiles(ep Endpoint, files []string, err error, events chan<- UploadEvent) {

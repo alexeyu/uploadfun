@@ -58,6 +58,17 @@ func TestParseArgsValid(t *testing.T) {
 	}
 }
 
+func TestParseArgsDryRunAndNoVerify(t *testing.T) {
+	var stderr bytes.Buffer
+	opts, code := parseArgs([]string{"--config", "x.yaml", "--dry-run", "--no-verify", "a.jpg"}, &stderr)
+	if opts == nil {
+		t.Fatalf("expected valid opts (code=%d, stderr=%q)", code, stderr.String())
+	}
+	if !opts.dryRun || !opts.noVerify {
+		t.Errorf("expected dryRun and noVerify both set, got %+v", opts)
+	}
+}
+
 func TestParseArgsHelp(t *testing.T) {
 	var stderr bytes.Buffer
 	opts, code := parseArgs([]string{"--help"}, &stderr)

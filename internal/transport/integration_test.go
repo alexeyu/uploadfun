@@ -189,8 +189,15 @@ func exerciseUploadDeleteVerify(t *testing.T, client verifyingUploader, remoteNa
 		t.Errorf("expected verify method %q, got %q", "size", method)
 	}
 
-	if _, err := client.List(); err != nil {
+	names, err := client.List()
+	if err != nil {
 		t.Errorf("List: %v", err)
+	}
+	for _, name := range names {
+		if name == "." || name == ".." {
+			t.Errorf("expected List to exclude pseudo-entries, got %v", names)
+			break
+		}
 	}
 
 	if err := client.Delete(remoteName); err != nil {

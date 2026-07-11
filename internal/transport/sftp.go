@@ -196,7 +196,8 @@ func (c *SFTPClient) Verify(localPath, remoteName string) (method string, err er
 }
 
 // List returns the names of entries in the current remote directory,
-// used only for --dry-run.
+// used only for --dry-run. Excludes "." and ".." should a server include
+// them (same reasoning as FTPClient.List).
 func (c *SFTPClient) List() ([]string, error) {
 	cwd, err := c.sftp.Getwd()
 	if err != nil {
@@ -208,6 +209,9 @@ func (c *SFTPClient) List() ([]string, error) {
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if e.Name() == "." || e.Name() == ".." {
+			continue
+		}
 		names = append(names, e.Name())
 	}
 	return names, nil

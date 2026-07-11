@@ -21,12 +21,16 @@ func syntheticEvents() []uploadfun.UploadEvent {
 }
 
 func runPrinter(mode outputMode, jsonOutput bool) (stdout, stderr string, failed bool) {
+	return runPrinterWithEvents(mode, jsonOutput, syntheticEvents())
+}
+
+func runPrinterWithEvents(mode outputMode, jsonOutput bool, synthetic []uploadfun.UploadEvent) (stdout, stderr string, failed bool) {
 	var outBuf, errBuf bytes.Buffer
 	p := newPrinter(&outBuf, &errBuf, mode, jsonOutput)
 
 	events := make(chan uploadfun.UploadEvent)
 	go func() {
-		for _, e := range syntheticEvents() {
+		for _, e := range synthetic {
 			events <- e
 		}
 		close(events)
@@ -104,5 +108,69 @@ func TestPrinterJSONOutput(t *testing.T) {
 	}
 	if _, hasErr := errPayload["Err"]; hasErr {
 		t.Error("expected Err field to be excluded from JSON output")
+	}
+}
+
+func TestPrinterDryRunSuccess(t *testing.T) {
+	events := []uploadfun.UploadEvent{
+		uploadfun.DryRunEvent{Endpoint: "ep1", Entries: []string{"a.jpg", "b.jpg"}},
+	}
+	stdout, stderr, failed := runPrinterWithEvents(modeDefault, false, events)
+	if failed {
+		t.Error("expected a successful dry run not to count as a failure")
+	}
+	if stderr != "" {
+		t.Errorf("expected no stderr output, got %q", stderr)
+	}
+	if !strings.Contains(stdout, "dry-run ok") || !strings.Contains(stdout, "2 entries") {
+		t.Errorf("expected a dry-run summary on stdout, got %q", stdout)
+	}
+}
+
+func TestPrinterDryRunFailure(t *testing.T) {
+	events := []uploadfun.UploadEvent{
+		uploadfun.DryRunEvent{Endpoint: "ep1", Err: errors.New("connect refused")},
+	}
+	stdout, stderr, failed := runPrinterWithEvents(modeDefault, false, events)
+	if !failed {
+		t.Error("expected a failed dry run to count as a failure")
+	}
+	if stdout != "" {
+		t.Errorf("expected no stdout output on dry-run failure, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "connect refused") {
+		t.Errorf("expected the error on stderr, got %q", stderr)
+	}
+}
+
+func TestPrinterDryRunFailurePrintsEvenWhenQuiet(t *testing.T) {
+	events := []uploadfun.UploadEvent{
+		uploadfun.DryRunEvent{Endpoint: "ep1", Err: errors.New("connect refused")},
+	}
+	_, stderr, failed := runPrinterWithEvents(modeQuiet, false, events)
+	if !failed {
+		t.Error("expected failure to be detected even in quiet mode")
+	}
+	if !strings.Contains(stderr, "connect refused") {
+		t.Errorf("expected the error on stderr even in quiet mode, got %q", stderr)
+	}
+}
+
+func TestPrinterDryRunJSON(t *testing.T) {
+	events := []uploadfun.UploadEvent{
+		uploadfun.DryRunEvent{Endpoint: "ep1", Entries: []string{"a.jpg"}},
+	}
+	stdout, _, _ := runPrinterWithEvents(modeDefault, true, events)
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
+		t.Fatalf("expected valid JSON, got %q: %v", stdout, err)
+	}
+	if payload["type"] != "dry_run" {
+		t.Errorf("expected type=dry_run, got %v", payload["type"])
+	}
+	entries, ok := payload["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Errorf("expected entries=[a.jpg], got %v", payload["entries"])
 	}
 }

@@ -33,6 +33,8 @@ type cliOptions struct {
 	quiet      bool
 	verbose    bool
 	json       bool
+	dryRun     bool
+	noVerify   bool
 	paths      []string
 }
 
@@ -47,6 +49,8 @@ func parseArgs(args []string, stderr io.Writer) (*cliOptions, int) {
 	fs.BoolVar(&opts.quiet, "quiet", false, "suppress non-error output")
 	fs.BoolVar(&opts.verbose, "verbose", false, "print the full event stream, including byte-level progress")
 	fs.BoolVar(&opts.json, "json", false, "format output as newline-delimited JSON")
+	fs.BoolVar(&opts.dryRun, "dry-run", false, "connect, authenticate, and list each endpoint's remote directory; no transfer, no delete, no writes")
+	fs.BoolVar(&opts.noVerify, "no-verify", false, "disable post-upload size/hash verification")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s <path>... --config <file> [flags]\n\n", fs.Name())
 		fs.PrintDefaults()
@@ -137,7 +141,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	p := newPrinter(stdout, stderr, outputModeFor(opts.quiet, opts.verbose), opts.json)
-	events := uploadfun.Upload(ctx, files, endpoints, uploadfun.Options{})
+	events := uploadfun.Upload(ctx, files, endpoints, uploadfun.Options{DryRun: opts.dryRun, NoVerify: opts.noVerify})
 	if processEvents(events, p) {
 		return exitPartialFailure
 	}

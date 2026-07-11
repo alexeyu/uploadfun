@@ -82,10 +82,10 @@ type UploadEvent interface {
 // ProgressEvent reports byte-level upload progress for one file on one
 // endpoint. Only emitted in verbose mode's underlying event stream.
 type ProgressEvent struct {
-	Endpoint   string
-	File       string
-	BytesSent  int64
-	TotalBytes int64
+	Endpoint   string `json:"endpoint"`
+	File       string `json:"file"`
+	BytesSent  int64  `json:"bytesSent"`
+	TotalBytes int64  `json:"totalBytes"`
 }
 
 func (ProgressEvent) uploadEvent() {}
@@ -93,13 +93,13 @@ func (ProgressEvent) uploadEvent() {}
 // FileSuccessEvent reports that a file was uploaded (and, unless
 // NoVerify, verified) successfully on one endpoint.
 type FileSuccessEvent struct {
-	Endpoint string
-	File     string
+	Endpoint string `json:"endpoint"`
+	File     string `json:"file"`
 	// VerifyMethod describes what verification was performed ("size",
 	// "size+hash"), or "" if verification was disabled (NoVerify). Lets
 	// a caller surface the weaker size-only guarantee distinctly rather
 	// than silently.
-	VerifyMethod string
+	VerifyMethod string `json:"verifyMethod,omitempty"`
 }
 
 func (FileSuccessEvent) uploadEvent() {}
@@ -108,11 +108,14 @@ func (FileSuccessEvent) uploadEvent() {}
 // for a file on one endpoint. Attempt is 1-based; further attempts follow
 // up to the endpoint's Attempts budget before the file is given up on.
 type FileErrorEvent struct {
-	Endpoint string
-	File     string
-	Attempt  int
-	Reason   string
-	Err      error
+	Endpoint string `json:"endpoint"`
+	File     string `json:"file"`
+	Attempt  int    `json:"attempt"`
+	Reason   string `json:"reason"`
+	// Err is the underlying error; excluded from JSON output since the
+	// error interface carries no exported fields worth serializing (its
+	// message is already captured in Reason).
+	Err error `json:"-"`
 }
 
 func (FileErrorEvent) uploadEvent() {}
@@ -120,9 +123,9 @@ func (FileErrorEvent) uploadEvent() {}
 // EndpointDoneEvent reports that one endpoint's worker has finished
 // (uploaded or given up on) every file and disconnected.
 type EndpointDoneEvent struct {
-	Endpoint  string
-	Succeeded int
-	Failed    int
+	Endpoint  string `json:"endpoint"`
+	Succeeded int    `json:"succeeded"`
+	Failed    int    `json:"failed"`
 }
 
 func (EndpointDoneEvent) uploadEvent() {}

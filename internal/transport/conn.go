@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// verifyBySize confirms remoteName matches localPath's size — the size-only
+// verifyBySize confirms remoteName matches localPath's size - the size-only
 // check both FTP/FTPS and SFTP fall back to, lacking a portable remote-hash
 // command. remoteSize fetches the remote size for the calling transport.
 func verifyBySize(localPath, remoteName string, remoteSize func(string) (int64, error)) (

@@ -42,7 +42,7 @@ func newPrinter(stdout, stderr io.Writer, mode outputMode, jsonOutput bool) *pri
 // processEvents drains events, printing each per the printer's mode, and
 // reports whether any endpoint finished with at least one failed file
 // (or, for --dry-run, at least one endpoint that failed to connect/
-// authenticate/list) — the exit-code-1 condition.
+// authenticate/list) - the exit-code-1 condition.
 func processEvents(events <-chan uploadfun.UploadEvent, p *printer) (failed bool) {
 	for ev := range events {
 		p.handle(ev)
@@ -76,7 +76,7 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			p.write(p.stdout, e, msg)
 		}
 	case uploadfun.FileErrorEvent:
-		// Errors always print, even in --quiet — "nothing" in the output
+		// Errors always print, even in --quiet - "nothing" in the output
 		// modes table means non-error stdout output, not silence on
 		// failure.
 		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)

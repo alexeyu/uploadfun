@@ -28,7 +28,7 @@ type FTPDialOptions struct {
 
 // FTPClient wraps a connected FTP (or FTPS, via explicit AUTH TLS)
 // session. Not safe for concurrent use, matching the underlying library
-// — this mirrors the "one reused connection per endpoint worker" model
+// - this mirrors the "one reused connection per endpoint worker" model
 // the engine drives it with.
 type FTPClient struct {
 	conn *ftp.ServerConn
@@ -105,7 +105,7 @@ func (d *ftpDialer) dial(network, address string) (net.Conn, error) {
 		return nil, err
 	}
 	// The first dial is the control connection: hand back the (guarded)
-	// conn — the library does the AUTH TLS upgrade itself — with a deadline
+	// conn - the library does the AUTH TLS upgrade itself - with a deadline
 	// covering banner/AUTH-TLS/login. Data connections opened later must
 	// not inherit that deadline.
 	if d.ctrlConn == nil {
@@ -116,7 +116,7 @@ func (d *ftpDialer) dial(network, address string) (net.Conn, error) {
 	// Data connection: with a custom dial func the library skips its own
 	// TLS wrapping, so wrap it here with the same config (shared
 	// ClientSessionCache + ServerName) that lets the data session resume
-	// the control session — pure-ftpd and others require it.
+	// the control session - pure-ftpd and others require it.
 	if d.tlsConfig != nil {
 		return tls.Client(d.guard.wrap(conn), d.tlsConfig), nil
 	}
@@ -151,7 +151,7 @@ func ftpDialAndLogin(addr string, cfg dialConfig, d *ftpDialer) (*ftp.ServerConn
 // resumption when ServerName is non-empty (it's part of the session
 // cache key) and ClientSessionCache is set. Servers that enforce "the
 // data connection must resume the control connection's TLS session" as
-// an anti-hijacking measure — pure-ftpd among them — silently accept the
+// an anti-hijacking measure - pure-ftpd among them - silently accept the
 // data connection's TCP handshake and then drop it once the session
 // fails to match, which surfaces to callers as a bare io.EOF on
 // upload/download with no indication it was a TLS policy rejection.

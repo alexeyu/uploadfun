@@ -40,7 +40,7 @@ type SFTPClient struct {
 }
 
 // DialSFTP connects over SSH and opens an SFTP session. The remote host
-// key is verified against the current user's ~/.ssh/known_hosts — there
+// key is verified against the current user's ~/.ssh/known_hosts - there
 // is no insecure-by-default fallback; an unrecognized host fails with a
 // clear error, matching OpenSSH's own trust-on-first-use flow (`ssh` (or
 // `ssh-keyscan`) into the host once to populate known_hosts, then retry).
@@ -125,9 +125,9 @@ func sftpAuthMethods(opts SFTPDialOptions) ([]ssh.AuthMethod, error) {
 	return nil, errors.New("sftp requires a password or private key")
 }
 
-// loadPrivateKey tries parsing path as an unencrypted key first — a key
+// loadPrivateKey tries parsing path as an unencrypted key first - a key
 // isn't necessarily protected just because Password is also set (Password
-// may be present for some other endpoint reason) — and only falls back
+// may be present for some other endpoint reason) - and only falls back
 // to passphrase-protected parsing if the key itself demands it.
 func loadPrivateKey(path, passphrase string) (ssh.Signer, error) {
 	keyBytes, err := os.ReadFile(path)
@@ -158,7 +158,7 @@ func knownHostsCallback() (ssh.HostKeyCallback, error) {
 	path := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf(
-			"%s not found or unreadable — connect once with `ssh` to add the host, then retry: %w",
+			"%s not found or unreadable - connect once with `ssh` to add the host, then retry: %w",
 			path, err)
 	}
 	return knownhosts.New(path)

@@ -12,14 +12,13 @@ import (
 // worker drives. One Uploader is connected once per Endpoint and reused
 // across every file in the batch for as long as nothing fails; any failure
 // disconnects and the next attempt reconnects from scratch.
-//
-// Delete must treat "remote file doesn't exist" as success (a no-op),
-// not an error — it's called unconditionally before every upload when
-// Endpoint.Overwrite is OverwriteDeleteFirst, including the very first
-// upload of a file that was never there.
 type Uploader interface {
 	Connect(ctx context.Context, ep Endpoint) error
 	Disconnect(ctx context.Context) error
+	// Delete must treat "remote file doesn't exist" as success (a no-op),
+	// not an error - it's called unconditionally before every upload when
+	// Endpoint.Overwrite is OverwriteDeleteFirst, including the very first
+	// upload of a file that was never there.
 	Delete(ctx context.Context, remoteName string) error
 	Upload(ctx context.Context, localPath, remoteName string, progress func(sent, total int64)) error
 	// Verify compares the just-uploaded local file against its remote
@@ -113,9 +112,6 @@ func (w *endpointWorker) run(files []string) {
 func (w *endpointWorker) uploadFile(file string) bool {
 	remoteName := filepath.Base(file)
 	for attempt := 1; attempt <= w.ep.Attempts; attempt++ {
-		// Stop retrying once canceled instead of burning the remaining
-		// budget on connects that fail instantly against a dead ctx,
-		// each emitting a misleading "connect" FileErrorEvent.
 		if w.ctx.Err() != nil {
 			return false
 		}
@@ -221,7 +217,7 @@ func (w *endpointWorker) sleepBeforeRetry(attempt int) {
 }
 
 // runDryRun performs the --dry-run connectivity check for one endpoint:
-// connect, authenticate, list the remote directory, disconnect — never
+// connect, authenticate, list the remote directory, disconnect - never
 // touching files.
 func runDryRun(ctx context.Context, up Uploader, ep Endpoint, events chan<- UploadEvent) {
 	connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)

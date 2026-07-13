@@ -132,7 +132,7 @@ func (EndpointDoneEvent) uploadEvent() {}
 
 // DryRunEvent reports the outcome of a --dry-run connectivity check for
 // one endpoint: connect, authenticate, list the remote directory,
-// disconnect — no transfer, no delete, no writes. Exactly one is sent
+// disconnect - no transfer, no delete, no writes. Exactly one is sent
 // per endpoint when Options.DryRun is set, replacing the normal
 // per-file event sequence entirely.
 type DryRunEvent struct {

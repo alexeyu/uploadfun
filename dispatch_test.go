@@ -32,7 +32,7 @@ type fakeUploader struct {
 	listCalls  int
 
 	// beforeUpload, if set, runs at the start of each Upload with the
-	// 1-based call number — a hook for tests to cancel mid-transfer.
+	// 1-based call number - a hook for tests to cancel mid-transfer.
 	beforeUpload func(call int)
 }
 
@@ -360,7 +360,7 @@ func TestDispatchContextCanceledBeforeStart(t *testing.T) {
 func TestDispatchCancelDuringRetryEmitsNoSpuriousErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Every upload fails, so each attempt disconnects and reconnects —
+	// Every upload fails, so each attempt disconnects and reconnects -
 	// the retry path. Cancel while the first attempt is mid-upload.
 	f := &fakeUploader{failUploadN: 1000}
 	f.beforeUpload = func(call int) {

@@ -3,7 +3,7 @@ coverage.out
 *.test
 /uploadfun
 
-# local planning notes and agent definitions — not part of the published repo
+# local planning notes and agent definitions - not part of the published repo
 *.md
 !README.md
 .claude/

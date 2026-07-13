@@ -44,7 +44,7 @@ type cliOptions struct {
 
 // parseArgs returns nil options (and the exit code to use) for --help,
 // --version, and any usage error, so run's caller doesn't need to
-// distinguish "asked for help" from "got it wrong" — both just stop.
+// distinguish "asked for help" from "got it wrong" - both just stop.
 func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	fs := flag.NewFlagSet("uploadfun", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -99,7 +99,7 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 }
 
 // parseInterleaved runs fs.Parse repeatedly so flags and positional
-// arguments may appear in any order — the documented invocation puts
+// arguments may appear in any order - the documented invocation puts
 // paths before --config, but stdlib flag otherwise stops parsing at the
 // first positional. It returns the collected positionals, or the first
 // fs.Parse error (including flag.ErrHelp).
@@ -161,8 +161,8 @@ func expandPaths(paths []string) ([]string, error) {
 
 // checkBasenameCollisions rejects inputs that would map to the same remote
 // filename. The remote name is a file's basename (see dispatch's
-// remoteName), so two inputs sharing a basename — e.g. a/img.jpg and
-// b/img.jpg, or the same path passed twice — would, under the default
+// remoteName), so two inputs sharing a basename - e.g. a/img.jpg and
+// b/img.jpg, or the same path passed twice - would, under the default
 // delete-first overwrite, have one silently clobber the other. Catch it up
 // front rather than reporting success for a file that was overwritten.
 func checkBasenameCollisions(files []string) error {

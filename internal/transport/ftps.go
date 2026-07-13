@@ -20,13 +20,13 @@ type FTPSDialOptions struct {
 	StallTimeout   time.Duration // 0 disables idle-stall protection
 	// TLSConfig overrides the default. Optional; any of ServerName or
 	// ClientSessionCache left unset are filled in automatically (see
-	// resolveTLSConfig) — both are required for many servers' data
+	// resolveTLSConfig) - both are required for many servers' data
 	// connections to work at all, not just cosmetic defaults.
 	TLSConfig *tls.Config
 }
 
 // DialFTPS connects and authenticates over FTP with explicit AUTH TLS.
-// It returns the same FTPClient as DialFTP — once connected, FTP and
+// It returns the same FTPClient as DialFTP - once connected, FTP and
 // FTPS sessions behave identically for upload/delete/verify/list.
 func DialFTPS(ctx context.Context, opts FTPSDialOptions) (*FTPClient, error) {
 	return dial(ctx, dialConfig{

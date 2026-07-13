@@ -1,7 +1,7 @@
 //go:build integration
 
 // Real-server integration tests, gated behind the "integration" build
-// tag — they need Docker and exercise actual FTP/FTPS/SFTP servers, so
+// tag - they need Docker and exercise actual FTP/FTPS/SFTP servers, so
 // they never run as part of a plain `go test`. Run with:
 //
 //	go test -tags integration ./internal/transport/...
@@ -10,7 +10,7 @@
 // FTP and, via a pre-generated test-only cert in testdata/, explicit
 // AUTH TLS) and an atmoz/sftp container, on fixed local ports. If Docker
 // isn't reachable, the whole run is skipped with a message rather than
-// failing — matching "never block a contributor without Docker".
+// failing - matching "never block a contributor without Docker".
 package transport
 
 import (
@@ -134,7 +134,7 @@ func startAtmozSFTP() func() {
 	waitForPort(fmt.Sprintf("127.0.0.1:%d", sftpPort), 30*time.Second)
 
 	// The container's SSH host key is regenerated every run, so populate
-	// known_hosts for it before any test dials in — DialSFTP refuses to
+	// known_hosts for it before any test dials in - DialSFTP refuses to
 	// connect to an unrecognized host.
 	if err := os.MkdirAll(filepath.Join(itHome, ".ssh"), 0o700); err != nil {
 		fmt.Println(err)
@@ -279,7 +279,7 @@ func TestIntegrationSFTP(t *testing.T) {
 	defer func() { _ = client.Close() }()
 
 	// atmoz/sftp chroots the user at their home directory, which (per
-	// OpenSSH's ChrootDirectory rules) must not itself be writable — only
+	// OpenSSH's ChrootDirectory rules) must not itself be writable - only
 	// the "upload" subdirectory declared when the container started is.
 	exerciseUploadDeleteVerify(t, client, "upload/payload.txt")
 }

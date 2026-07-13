@@ -1,6 +1,3 @@
-// Package uploadfun fans out local files to multiple FTP/FTPS/SFTP
-// endpoints concurrently, with retry and an event stream, for unattended
-// automation rather than interactive use.
 package uploadfun
 
 import (
@@ -59,7 +56,9 @@ type Endpoint struct {
 	Attempts       int
 	RetryDelay     time.Duration
 	ConnectTimeout time.Duration
-	StallTimeout   time.Duration
+	// StallTimeout bounds how long a transfer may go without forward
+	// progress; zero disables idle-stall protection.
+	StallTimeout time.Duration
 }
 
 // Options controls behavior of Upload that isn't per-endpoint config.
@@ -80,7 +79,8 @@ type UploadEvent interface {
 }
 
 // ProgressEvent reports byte-level upload progress for one file on one
-// endpoint. Only emitted in verbose mode's underlying event stream.
+// endpoint. It is always emitted; consumers that don't want progress
+// detail (like the CLI's non-verbose modes) simply ignore it.
 type ProgressEvent struct {
 	Endpoint   string `json:"endpoint"`
 	File       string `json:"file"`

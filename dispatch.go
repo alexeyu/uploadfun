@@ -163,7 +163,8 @@ func (w *endpointWorker) connect(file string, attempt int) connectResult {
 			return connectCanceled
 		}
 		w.events <- FileErrorEvent{
-			Endpoint: w.ep.Name, File: file, Attempt: attempt, Reason: "connect", Err: err,
+			Endpoint: w.ep.Name, File: file, Attempt: attempt,
+			Reason: "connect: " + err.Error(), Err: err,
 		}
 		return connectFailed
 	}

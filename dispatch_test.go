@@ -3,6 +3,7 @@ package uploadfun
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -335,6 +336,25 @@ func TestDispatchUnregisteredProtocol(t *testing.T) {
 	}
 }
 
+func TestDispatchConnectFailureReasonIncludesCause(t *testing.T) {
+	f := &fakeUploader{failConnectN: 999}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 1
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{ep}, Options{}))
+
+	var errEvent FileErrorEvent
+	for _, e := range events {
+		if fe, ok := e.(FileErrorEvent); ok {
+			errEvent = fe
+		}
+	}
+	if errEvent.Reason != "connect: simulated connect failure" {
+		t.Errorf("expected the connect error's cause in Reason, got %q", errEvent.Reason)
+	}
+}
+
 func TestDispatchContextCanceledBeforeStart(t *testing.T) {
 	f := &fakeUploader{}
 	withFakeUploader(t, f)
@@ -381,7 +401,7 @@ func TestDispatchCancelDuringRetryEmitsNoSpuriousErrors(t *testing.T) {
 		t.Errorf("expected at most one error event after cancellation, got %d", counts["error"])
 	}
 	for _, e := range events {
-		if fe, ok := e.(FileErrorEvent); ok && fe.Reason == "connect" {
+		if fe, ok := e.(FileErrorEvent); ok && strings.HasPrefix(fe.Reason, "connect: ") {
 			t.Errorf("unexpected spurious connect error after cancellation: %+v", fe)
 		}
 	}

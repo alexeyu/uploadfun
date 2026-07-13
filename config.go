@@ -99,13 +99,13 @@ func resolveGlobals(raw rawConfig) (globalDefaults, []error) {
 	}
 
 	var err error
-	if g.retryDelay, err = parseDuration(raw.RetryDelay, g.retryDelay); err != nil {
+	if g.retryDelay, err = parseNonNegativeDuration(raw.RetryDelay, g.retryDelay); err != nil {
 		errs = append(errs, fmt.Errorf("retry_delay: %w", err))
 	}
-	if g.connectTimeout, err = parseDuration(raw.ConnectTimeout, g.connectTimeout); err != nil {
+	if g.connectTimeout, err = parsePositiveDuration(raw.ConnectTimeout, g.connectTimeout); err != nil {
 		errs = append(errs, fmt.Errorf("connect_timeout: %w", err))
 	}
-	if g.stallTimeout, err = parseDuration(raw.StallTimeout, g.stallTimeout); err != nil {
+	if g.stallTimeout, err = parseNonNegativeDuration(raw.StallTimeout, g.stallTimeout); err != nil {
 		errs = append(errs, fmt.Errorf("stall_timeout: %w", err))
 	}
 	return g, errs
@@ -278,13 +278,13 @@ func resolveEndpointDurations(label string, re rawEndpoint, g globalDefaults) (
 	}
 
 	var err error
-	if retryDelay, err = parseDuration(re.RetryDelay, g.retryDelay); err != nil {
+	if retryDelay, err = parseNonNegativeDuration(re.RetryDelay, g.retryDelay); err != nil {
 		errs = append(errs, fmt.Errorf("%s: retry_delay: %w", label, err))
 	}
-	if connectTimeout, err = parseDuration(re.ConnectTimeout, g.connectTimeout); err != nil {
+	if connectTimeout, err = parsePositiveDuration(re.ConnectTimeout, g.connectTimeout); err != nil {
 		errs = append(errs, fmt.Errorf("%s: connect_timeout: %w", label, err))
 	}
-	if stallTimeout, err = parseDuration(re.StallTimeout, g.stallTimeout); err != nil {
+	if stallTimeout, err = parseNonNegativeDuration(re.StallTimeout, g.stallTimeout); err != nil {
 		errs = append(errs, fmt.Errorf("%s: stall_timeout: %w", label, err))
 	}
 	return attempts, retryDelay, connectTimeout, stallTimeout, errs
@@ -297,6 +297,27 @@ func parseDuration(raw *string, def time.Duration) (time.Duration, error) {
 		return def, nil
 	}
 	return time.ParseDuration(*raw)
+}
+
+// parseNonNegativeDuration is parseDuration for fields where zero is
+// meaningful (retry immediately; stall protection disabled) but a negative
+// value is always a mistake.
+func parseNonNegativeDuration(raw *string, def time.Duration) (time.Duration, error) {
+	d, err := parseDuration(raw, def)
+	if err == nil && d < 0 {
+		return 0, fmt.Errorf("must not be negative, got %v", d)
+	}
+	return d, err
+}
+
+// parsePositiveDuration is parseDuration for connect_timeout, where zero
+// would arm an already-expired dial deadline and fail every connect.
+func parsePositiveDuration(raw *string, def time.Duration) (time.Duration, error) {
+	d, err := parseDuration(raw, def)
+	if err == nil && d <= 0 {
+		return 0, fmt.Errorf("must be positive, got %v", d)
+	}
+	return d, err
 }
 
 // interpolateEnv replaces every ${VAR} occurrence in s with the value of

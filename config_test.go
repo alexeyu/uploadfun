@@ -133,6 +133,50 @@ endpoints:
 	}
 }
 
+func TestLoadConfigRejectsBadDurations(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    username: u
+    password: p
+    connect_timeout: 0s
+retry_delay: -2s
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{
+		"retry_delay: must not be negative",
+		"connect_timeout: must be positive",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected error message to contain %q, got:\n%s", want, err)
+		}
+	}
+}
+
+func TestLoadConfigZeroStallTimeoutDisablesProtection(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    username: u
+    password: p
+    stall_timeout: 0s
+`)
+	endpoints, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if endpoints[0].StallTimeout != 0 {
+		t.Errorf("expected stall timeout 0 (disabled), got %v", endpoints[0].StallTimeout)
+	}
+}
+
 func TestLoadConfigMissingEnvVar(t *testing.T) {
 	_ = os.Unsetenv("DOES_NOT_EXIST_XYZ")
 	path := writeConfig(t, `

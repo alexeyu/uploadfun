@@ -13,11 +13,8 @@ import (
 )
 
 type rawConfig struct {
-	Endpoints      []rawEndpoint `yaml:"endpoints"`
-	Attempts       *int          `yaml:"attempts"`
-	RetryDelay     *string       `yaml:"retry_delay"`
-	ConnectTimeout *string       `yaml:"connect_timeout"`
-	StallTimeout   *string       `yaml:"stall_timeout"`
+	Endpoints []rawEndpoint `yaml:"endpoints"`
+	rawPolicy `yaml:",inline"`
 }
 
 type rawEndpoint struct {
@@ -30,6 +27,14 @@ type rawEndpoint struct {
 	PrivateKey string `yaml:"private_key"`
 	Overwrite  string `yaml:"overwrite"`
 
+	rawPolicy `yaml:",inline"`
+}
+
+// rawPolicy is the yaml-level view of the attempts/timeout fields that
+// appear both at the config's top level (as global defaults) and on each
+// endpoint (as overrides). Pointers distinguish "unset" from an explicit
+// zero.
+type rawPolicy struct {
 	Attempts       *int    `yaml:"attempts"`
 	RetryDelay     *string `yaml:"retry_delay"`
 	ConnectTimeout *string `yaml:"connect_timeout"`
@@ -54,7 +59,7 @@ func LoadConfig(path string) ([]Endpoint, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	globals, errs := resolveGlobals(raw)
+	globals, errs := resolvePolicy(raw.rawPolicy, defaultPolicy(), "")
 	if len(raw.Endpoints) == 0 {
 		errs = append(errs, errors.New("endpoints: at least one endpoint is required"))
 	}
@@ -73,49 +78,59 @@ func LoadConfig(path string) ([]Endpoint, error) {
 	return endpoints, nil
 }
 
-// globalDefaults are the config-level attempts/timeout values applied to
-// any endpoint that doesn't override them.
-type globalDefaults struct {
+// retryPolicy is a resolved set of attempts/timeout values. The config's
+// top level resolves one (over the built-in defaults) to act as the
+// global defaults; each endpoint then resolves its own overrides on top
+// of that.
+type retryPolicy struct {
 	attempts       int
 	retryDelay     time.Duration
 	connectTimeout time.Duration
 	stallTimeout   time.Duration
 }
 
-func resolveGlobals(raw rawConfig) (globalDefaults, []error) {
-	var errs []error
-	g := globalDefaults{
+// defaultPolicy is the built-in policy applied before any config values.
+func defaultPolicy() retryPolicy {
+	return retryPolicy{
 		attempts:       DefaultAttempts,
 		retryDelay:     DefaultRetryDelay,
 		connectTimeout: DefaultConnectTimeout,
 		stallTimeout:   DefaultStallTimeout,
 	}
+}
+
+// resolvePolicy overlays raw's set fields on base, validating each.
+// errPrefix (`endpoint "x": ` for endpoints, "" at the top level) is
+// prepended to every error.
+func resolvePolicy(raw rawPolicy, base retryPolicy, errPrefix string) (retryPolicy, []error) {
+	var errs []error
+	p := base
 
 	if raw.Attempts != nil {
-		g.attempts = *raw.Attempts
-		if g.attempts < 1 {
-			errs = append(errs, fmt.Errorf("attempts: must be >= 1, got %d", g.attempts))
+		p.attempts = *raw.Attempts
+		if p.attempts < 1 {
+			errs = append(errs, fmt.Errorf("%sattempts: must be >= 1, got %d", errPrefix, p.attempts))
 		}
 	}
 
 	var err error
-	if g.retryDelay, err = parseNonNegativeDuration(raw.RetryDelay, g.retryDelay); err != nil {
-		errs = append(errs, fmt.Errorf("retry_delay: %w", err))
+	if p.retryDelay, err = parseNonNegativeDuration(raw.RetryDelay, base.retryDelay); err != nil {
+		errs = append(errs, fmt.Errorf("%sretry_delay: %w", errPrefix, err))
 	}
-	if g.connectTimeout, err = parsePositiveDuration(raw.ConnectTimeout, g.connectTimeout); err != nil {
-		errs = append(errs, fmt.Errorf("connect_timeout: %w", err))
+	if p.connectTimeout, err = parsePositiveDuration(raw.ConnectTimeout, base.connectTimeout); err != nil {
+		errs = append(errs, fmt.Errorf("%sconnect_timeout: %w", errPrefix, err))
 	}
-	if g.stallTimeout, err = parseNonNegativeDuration(raw.StallTimeout, g.stallTimeout); err != nil {
-		errs = append(errs, fmt.Errorf("stall_timeout: %w", err))
+	if p.stallTimeout, err = parseNonNegativeDuration(raw.StallTimeout, base.stallTimeout); err != nil {
+		errs = append(errs, fmt.Errorf("%sstall_timeout: %w", errPrefix, err))
 	}
-	return g, errs
+	return p, errs
 }
 
 // buildEndpoint resolves and validates a single raw endpoint against the
 // config's global defaults, recording a duplicate-name check against
 // seenNames as a side effect.
 func buildEndpoint(
-	re rawEndpoint, index int, g globalDefaults, seenNames map[string]bool,
+	re rawEndpoint, index int, g retryPolicy, seenNames map[string]bool,
 ) (Endpoint, []error) {
 	var errs []error
 	label := endpointLabel(index, re.Name)
@@ -143,9 +158,8 @@ func buildEndpoint(
 		errs = append(errs, fmt.Errorf("%s: private_key: %w", label, keyErr))
 	}
 
-	attempts, retryDelay, connectTimeout, stallTimeout, durationErrs :=
-		resolveEndpointDurations(label, re, g)
-	errs = append(errs, durationErrs...)
+	policy, policyErrs := resolvePolicy(re.rawPolicy, g, label+": ")
+	errs = append(errs, policyErrs...)
 
 	endpoint := Endpoint{
 		Name:           f.name,
@@ -156,10 +170,10 @@ func buildEndpoint(
 		Password:       f.password,
 		PrivateKey:     privateKey,
 		Overwrite:      overwrite,
-		Attempts:       attempts,
-		RetryDelay:     retryDelay,
-		ConnectTimeout: connectTimeout,
-		StallTimeout:   stallTimeout,
+		Attempts:       policy.attempts,
+		RetryDelay:     policy.retryDelay,
+		ConnectTimeout: policy.connectTimeout,
+		StallTimeout:   policy.stallTimeout,
 	}
 	return endpoint, errs
 }
@@ -264,30 +278,6 @@ func resolvePrivateKeyPath(privateKey string) (string, error) {
 		return "", nil
 	}
 	return expandHome(privateKey)
-}
-
-func resolveEndpointDurations(label string, re rawEndpoint, g globalDefaults) (
-	attempts int, retryDelay, connectTimeout, stallTimeout time.Duration, errs []error,
-) {
-	attempts = g.attempts
-	if re.Attempts != nil {
-		attempts = *re.Attempts
-		if attempts < 1 {
-			errs = append(errs, fmt.Errorf("%s: attempts must be >= 1, got %d", label, attempts))
-		}
-	}
-
-	var err error
-	if retryDelay, err = parseNonNegativeDuration(re.RetryDelay, g.retryDelay); err != nil {
-		errs = append(errs, fmt.Errorf("%s: retry_delay: %w", label, err))
-	}
-	if connectTimeout, err = parsePositiveDuration(re.ConnectTimeout, g.connectTimeout); err != nil {
-		errs = append(errs, fmt.Errorf("%s: connect_timeout: %w", label, err))
-	}
-	if stallTimeout, err = parseNonNegativeDuration(re.StallTimeout, g.stallTimeout); err != nil {
-		errs = append(errs, fmt.Errorf("%s: stall_timeout: %w", label, err))
-	}
-	return attempts, retryDelay, connectTimeout, stallTimeout, errs
 }
 
 // parseDuration returns def when raw is unset, otherwise the parsed

@@ -30,23 +30,14 @@ type Uploader interface {
 	List(ctx context.Context) ([]string, error)
 }
 
-// newUploader selects the Uploader implementation for protocol. It's a
-// package variable so tests can substitute a fake; transports.go wires in
-// the real ftp/ftps/sftp implementation in its init.
-var newUploader = func(protocol Protocol) (Uploader, error) {
-	return nil, fmt.Errorf("no transport registered for protocol %q", protocol)
-}
-
 func dispatch(
 	ctx context.Context, files []string, endpoints []Endpoint, opts Options, events chan<- UploadEvent,
 ) {
 	var wg sync.WaitGroup
 	for _, ep := range endpoints {
-		wg.Add(1)
-		go func(ep Endpoint) {
-			defer wg.Done()
+		wg.Go(func() {
 			runEndpoint(ctx, ep, files, opts, events)
-		}(ep)
+		})
 	}
 	wg.Wait()
 }

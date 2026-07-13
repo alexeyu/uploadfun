@@ -20,6 +20,6 @@ func TestUploadEventVocabularyImplementsInterface(t *testing.T) {
 func TestUploadClosesChannel(t *testing.T) {
 	ch := Upload(context.Background(), nil, nil, Options{})
 	for range ch {
-		t.Fatal("expected no events from placeholder Upload")
+		t.Fatal("expected no events when there are no endpoints")
 	}
 }

@@ -9,9 +9,10 @@ import (
 	"github.com/alexeyu/uploadfun/internal/transport"
 )
 
-func init() {
-	newUploader = newRealUploader
-}
+// newUploader selects the Uploader implementation for protocol. It's a
+// package variable so tests can substitute a fake (see withFakeUploader
+// in dispatch_test.go).
+var newUploader = newRealUploader
 
 // remoteClient is the common surface every internal/transport client
 // (FTPClient, SFTPClient) exposes; transportUploader adapts it to the

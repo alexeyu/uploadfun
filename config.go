@@ -117,10 +117,12 @@ func resolvePolicy(raw rawPolicy, base retryPolicy, errPrefix string) (retryPoli
 	if p.retryDelay, err = parseNonNegativeDuration(raw.RetryDelay, base.retryDelay); err != nil {
 		errs = append(errs, fmt.Errorf("%sretry_delay: %w", errPrefix, err))
 	}
-	if p.connectTimeout, err = parsePositiveDuration(raw.ConnectTimeout, base.connectTimeout); err != nil {
+	p.connectTimeout, err = parsePositiveDuration(raw.ConnectTimeout, base.connectTimeout)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("%sconnect_timeout: %w", errPrefix, err))
 	}
-	if p.stallTimeout, err = parseNonNegativeDuration(raw.StallTimeout, base.stallTimeout); err != nil {
+	p.stallTimeout, err = parseNonNegativeDuration(raw.StallTimeout, base.stallTimeout)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("%sstall_timeout: %w", errPrefix, err))
 	}
 	return p, errs

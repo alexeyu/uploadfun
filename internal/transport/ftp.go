@@ -77,10 +77,16 @@ func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 	}
 
 	// Session is up: clear the connect deadline and hand transfers over to
-	// the idle stall timeout instead.
+	// the idle stall timeout instead. Also detach the dialer from the
+	// connect-scoped ctx: the caller cancels it the instant Connect
+	// returns, but the ftp library reuses d.dial for every later PASV data
+	// connection (STOR, LIST, ...), which must not inherit that
+	// cancellation - those dials are already bounded by d.timeout and,
+	// once open, by the stall guard.
 	if d.ctrlConn != nil {
 		clearDeadline(d.ctrlConn)
 	}
+	d.ctx = context.Background()
 	guard.markEstablished()
 	return &FTPClient{conn: conn}, nil
 }

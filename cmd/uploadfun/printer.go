@@ -76,6 +76,12 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			e.Endpoint, e.ConsecutiveFailures, len(e.SkippedFiles),
 		)
 		p.write(p.stderr, e, msg)
+	case uploadfun.EndpointGivenUpEvent:
+		msg := fmt.Sprintf(
+			"[%s] giving up after unrecoverable error (%s): skipping %d remaining file(s)",
+			e.Endpoint, e.Reason, len(e.SkippedFiles),
+		)
+		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointDoneEvent:
 		msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
 		p.writeUnlessQuiet(e, msg)
@@ -116,6 +122,8 @@ func eventTypeName(ev uploadfun.UploadEvent) string {
 		return "file_error"
 	case uploadfun.EndpointUnreachableEvent:
 		return "endpoint_unreachable"
+	case uploadfun.EndpointGivenUpEvent:
+		return "endpoint_given_up"
 	case uploadfun.EndpointDoneEvent:
 		return "endpoint_done"
 	case uploadfun.DryRunEvent:

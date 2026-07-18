@@ -3,6 +3,7 @@ package uploadfun
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,11 @@ type fakeUploader struct {
 
 	failUploadN int
 	uploadCalls int
+	// uploadErr, if set, is returned instead of the default "simulated
+	// upload failure" for the calls covered by failUploadN - lets tests
+	// inject a specific error (e.g. os.ErrPermission) to exercise
+	// error-classification paths.
+	uploadErr error
 
 	failDeleteN int
 	deleteCalls int
@@ -82,6 +88,9 @@ func (f *fakeUploader) Upload(
 	progress(50, 100)
 	progress(100, 100)
 	if calls <= f.failUploadN {
+		if f.uploadErr != nil {
+			return f.uploadErr
+		}
 		return errors.New("simulated upload failure")
 	}
 	return nil
@@ -153,6 +162,8 @@ func countByType(events []UploadEvent) map[string]int {
 			counts["error"]++
 		case EndpointUnreachableEvent:
 			counts["unreachable"]++
+		case EndpointGivenUpEvent:
+			counts["given_up"]++
 		case EndpointDoneEvent:
 			counts["done"]++
 		}
@@ -484,6 +495,72 @@ func TestDispatchCircuitBreakerTripMidFileIsExplainedAndRestBundled(t *testing.T
 	if counts["unreachable"] != 1 {
 		t.Errorf("expected exactly 1 unreachable event, not one per skipped file, got %d",
 			counts["unreachable"])
+	}
+}
+
+func TestDispatchPermanentErrorAbandonsBatchWithoutRetry(t *testing.T) {
+	f := &fakeUploader{failUploadN: 999, uploadErr: os.ErrPermission}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 5
+	files := []string{"a.jpg", "b.jpg", "c.jpg"}
+	events := collectEvents(Upload(context.Background(), files, []Endpoint{ep}, Options{}))
+
+	if f.uploadCalls != 1 {
+		t.Errorf("expected exactly 1 upload call (no retry on a permanent error), got %d", f.uploadCalls)
+	}
+
+	counts := countByType(events)
+	if counts["error"] != 1 {
+		t.Errorf("expected exactly 1 error event (no retries), got %d", counts["error"])
+	}
+	if counts["given_up"] != 1 {
+		t.Errorf("expected exactly 1 given_up event bundling the rest of the batch, got %d",
+			counts["given_up"])
+	}
+
+	var givenUp *EndpointGivenUpEvent
+	for _, e := range events {
+		if ge, ok := e.(EndpointGivenUpEvent); ok {
+			givenUp = &ge
+		}
+	}
+	if givenUp == nil {
+		t.Fatal("expected an EndpointGivenUpEvent")
+	}
+	if len(givenUp.SkippedFiles) != 2 ||
+		givenUp.SkippedFiles[0] != "b.jpg" || givenUp.SkippedFiles[1] != "c.jpg" {
+		t.Errorf("expected b.jpg and c.jpg bundled together, got %v", givenUp.SkippedFiles)
+	}
+
+	var done EndpointDoneEvent
+	for _, e := range events {
+		if d, ok := e.(EndpointDoneEvent); ok {
+			done = d
+		}
+	}
+	if done.Succeeded != 0 || done.Failed != len(files) {
+		t.Errorf("expected EndpointDoneEvent{Succeeded:0,Failed:%d}, got %+v", len(files), done)
+	}
+}
+
+func TestDispatchNonPermanentErrorStillRetriesNormally(t *testing.T) {
+	// A plain error (as FTP/FTPS transports produce, never os.ErrPermission)
+	// must keep retrying instead of tripping the new fail-fast path.
+	f := &fakeUploader{failUploadN: 1}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 3
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{ep}, Options{}))
+
+	counts := countByType(events)
+	if counts["given_up"] != 0 {
+		t.Errorf("expected no given_up event for a non-permanent error, got %d", counts["given_up"])
+	}
+	if counts["success"] != 1 {
+		t.Errorf("expected the retry to succeed, got counts=%+v", counts)
 	}
 }
 

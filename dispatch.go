@@ -2,7 +2,9 @@ package uploadfun
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -75,6 +77,10 @@ type endpointWorker struct {
 	// success, persisting across files (unlike the per-file attempt loop)
 	// so a dead server doesn't get a fresh Attempts budget per file.
 	consecutiveConnectFailures int
+	// permanentErr, once set, means a transfer hit an unrecoverable error
+	// (isPermanentErr) - the rest of the batch is abandoned without
+	// retrying, since the same error would just recur on every file.
+	permanentErr error
 }
 
 // run uploads every file in order, tallies the outcome, and emits the
@@ -97,6 +103,12 @@ func (w *endpointWorker) run(files []string) {
 		} else {
 			failed++
 		}
+		if w.permanentErr != nil {
+			if rest := files[i+1:]; len(rest) > 0 {
+				failed += w.skipGivenUp(rest)
+			}
+			break
+		}
 	}
 
 	w.events <- EndpointDoneEvent{Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed}
@@ -117,6 +129,18 @@ func (w *endpointWorker) skipRemaining(files []string) int {
 		Endpoint:            w.ep.Name,
 		ConsecutiveFailures: w.consecutiveConnectFailures,
 		SkippedFiles:        files,
+	}
+	return len(files)
+}
+
+// skipGivenUp marks every file in files as failed without attempting
+// them, after permanentErr made further attempts on this endpoint
+// pointless. Returns len(files) for the caller's tally.
+func (w *endpointWorker) skipGivenUp(files []string) int {
+	w.events <- EndpointGivenUpEvent{
+		Endpoint:     w.ep.Name,
+		Reason:       w.permanentErr.Error(),
+		SkippedFiles: files,
 	}
 	return len(files)
 }
@@ -150,6 +174,10 @@ func (w *endpointWorker) uploadFile(file string) bool {
 				Endpoint: w.ep.Name, File: file, Attempt: attempt, Reason: err.Error(), Err: err,
 			}
 			w.disconnect()
+			if isPermanentErr(err) {
+				w.permanentErr = err
+				return false
+			}
 			w.sleepBeforeRetry(attempt)
 			continue
 		}
@@ -158,6 +186,18 @@ func (w *endpointWorker) uploadFile(file string) bool {
 		return true
 	}
 	return false
+}
+
+// isPermanentErr reports whether a transfer error is unrecoverable -
+// retrying the identical delete/upload/verify call can't succeed, so
+// there's no point burning the rest of the Attempts budget or the rest
+// of the batch on this endpoint. In practice this only ever matches
+// SFTP: the pkg/sftp client normalizes an SSH_FX_PERMISSION_DENIED
+// response into os.ErrPermission, while jlaffaye/ftp surfaces raw
+// textproto reply codes that never satisfy this check - so FTP/FTPS
+// retry behavior is unchanged.
+func isPermanentErr(err error) bool {
+	return errors.Is(err, os.ErrPermission)
 }
 
 type connectResult int

@@ -136,6 +136,18 @@ type EndpointUnreachableEvent struct {
 
 func (EndpointUnreachableEvent) uploadEvent() {}
 
+// EndpointGivenUpEvent reports that one endpoint's worker abandoned the
+// rest of the batch after hitting an unrecoverable transfer error (for
+// example, an SFTP permission-denied response), covering every skipped
+// file in a single event.
+type EndpointGivenUpEvent struct {
+	Endpoint     string   `json:"endpoint"`
+	Reason       string   `json:"reason"`
+	SkippedFiles []string `json:"skippedFiles"`
+}
+
+func (EndpointGivenUpEvent) uploadEvent() {}
+
 // EndpointDoneEvent reports that one endpoint's worker has finished
 // (uploaded or given up on) every file and disconnected.
 type EndpointDoneEvent struct {

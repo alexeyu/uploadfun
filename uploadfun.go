@@ -85,6 +85,18 @@ type UploadEvent interface {
 	uploadEvent()
 }
 
+// FileStartEvent reports that an endpoint worker is about to attempt one
+// file - emitted once per attempt, before delete/upload/verify, so
+// consumers know a (possibly long) transfer is underway before the first
+// ProgressEvent arrives.
+type FileStartEvent struct {
+	Endpoint string `json:"endpoint"`
+	File     string `json:"file"`
+	Attempt  int    `json:"attempt"`
+}
+
+func (FileStartEvent) uploadEvent() {}
+
 // ProgressEvent reports byte-level upload progress for one file on one
 // endpoint. It is always emitted; consumers that don't want progress
 // detail (like the CLI's non-verbose modes) simply ignore it.

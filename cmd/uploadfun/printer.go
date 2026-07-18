@@ -4,9 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/alexeyu/uploadfun"
 )
+
+// progressPercentStep is the finest resolution verbose progress lines are
+// printed at; progressMinInterval additionally debounces by wall-clock
+// time so a small/fast file - which can cross several 10% steps within
+// milliseconds - doesn't still print one line per step.
+const (
+	progressPercentStep = 10
+	progressMinInterval = time.Second
+)
+
+// progressState is a printer's per-(endpoint,file) memory of the last
+// verbose progress line it printed, used to throttle ProgressEvent output.
+type progressState struct {
+	lastPercent int
+	lastPrinted time.Time
+}
 
 type outputMode int
 
@@ -31,10 +48,17 @@ type printer struct {
 	stdout, stderr io.Writer
 	mode           outputMode
 	json           bool
+	progress       map[string]*progressState
+	// now is a seam for tests to fake wall-clock time; real callers get
+	// time.Now.
+	now func() time.Time
 }
 
 func newPrinter(stdout, stderr io.Writer, mode outputMode, jsonOutput bool) *printer {
-	return &printer{stdout: stdout, stderr: stderr, mode: mode, json: jsonOutput}
+	return &printer{
+		stdout: stdout, stderr: stderr, mode: mode, json: jsonOutput,
+		progress: make(map[string]*progressState), now: time.Now,
+	}
 }
 
 func processEvents(events <-chan uploadfun.UploadEvent, p *printer) (failed bool) {
@@ -56,12 +80,18 @@ func processEvents(events <-chan uploadfun.UploadEvent, p *printer) (failed bool
 
 func (p *printer) handle(ev uploadfun.UploadEvent) {
 	switch e := ev.(type) {
-	case uploadfun.ProgressEvent:
+	case uploadfun.FileStartEvent:
 		if p.mode == modeVerbose {
-			msg := fmt.Sprintf("[%s] %s: %d/%d bytes", e.Endpoint, e.File, e.BytesSent, e.TotalBytes)
+			p.progress[progressKey(e.Endpoint, e.File)] = &progressState{lastPercent: -1}
+			msg := fmt.Sprintf("[%s] %s: starting upload", e.Endpoint, e.File)
 			p.write(p.stdout, e, msg)
 		}
+	case uploadfun.ProgressEvent:
+		if p.mode == modeVerbose {
+			p.handleProgress(e)
+		}
 	case uploadfun.FileSuccessEvent:
+		delete(p.progress, progressKey(e.Endpoint, e.File))
 		msg := fmt.Sprintf("[%s] %s: uploaded", e.Endpoint, e.File)
 		if e.VerifyMethod != "" {
 			msg += fmt.Sprintf(" (verified: %s)", e.VerifyMethod)
@@ -95,6 +125,51 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 	}
 }
 
+// progressKey identifies one (endpoint,file) pair's progress-throttle state.
+// A literal NUL can't appear in either field, so it's a safe separator.
+func progressKey(endpoint, file string) string {
+	return endpoint + "\x00" + file
+}
+
+// handleProgress prints a verbose progress line at most every
+// progressPercentStep points and progressMinInterval, so a large/slow
+// transfer gets periodic updates without a small/fast one flooding the
+// output with a line per internal read-buffer chunk.
+func (p *printer) handleProgress(e uploadfun.ProgressEvent) {
+	key := progressKey(e.Endpoint, e.File)
+	st, ok := p.progress[key]
+	if !ok {
+		st = &progressState{lastPercent: -1}
+		p.progress[key] = st
+	}
+
+	percent := 100
+	if e.TotalBytes > 0 {
+		percent = int(e.BytesSent * 100 / e.TotalBytes)
+	}
+	bucket := percent - percent%progressPercentStep
+	final := e.BytesSent >= e.TotalBytes
+
+	// Skip the earliest 0-9% sliver: FileStartEvent already announced the
+	// upload beginning, so the first useful update is the first full step.
+	if bucket == 0 && !final {
+		return
+	}
+	if bucket == st.lastPercent {
+		return
+	}
+	now := p.now()
+	if !st.lastPrinted.IsZero() && now.Sub(st.lastPrinted) < progressMinInterval && !final {
+		return
+	}
+
+	st.lastPercent = bucket
+	st.lastPrinted = now
+	msg := fmt.Sprintf(
+		"[%s] %s: %d%% (%d/%d bytes)", e.Endpoint, e.File, percent, e.BytesSent, e.TotalBytes)
+	p.write(p.stdout, e, msg)
+}
+
 func (p *printer) writeUnlessQuiet(ev uploadfun.UploadEvent, msg string) {
 	if p.mode != modeQuiet {
 		p.write(p.stdout, ev, msg)
@@ -114,6 +189,8 @@ func (p *printer) write(w io.Writer, ev uploadfun.UploadEvent, text string) {
 // fields happen to be present.
 func eventTypeName(ev uploadfun.UploadEvent) string {
 	switch ev.(type) {
+	case uploadfun.FileStartEvent:
+		return "file_start"
 	case uploadfun.ProgressEvent:
 		return "progress"
 	case uploadfun.FileSuccessEvent:

@@ -168,6 +168,7 @@ func (w *endpointWorker) uploadFile(file string) bool {
 			}
 		}
 
+		w.events <- FileStartEvent{Endpoint: w.ep.Name, File: file, Attempt: attempt}
 		method, err := w.transfer(file, remoteName)
 		if err != nil {
 			w.events <- FileErrorEvent{

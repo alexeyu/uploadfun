@@ -22,7 +22,7 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -race
       - name: Integration tests (real FTP/FTPS/SFTP servers via Docker)
-        run: go test -tags integration ./internal/transport/... -v
+        run: go test -tags integration ./... -v
 
   lint:
     runs-on: ubuntu-latest

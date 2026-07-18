@@ -10,7 +10,7 @@ test:
 	go test ./... -race
 
 test-integration:
-	go test -tags integration ./internal/transport/... -v
+	go test -tags integration ./... -v
 
 lint:
 	golangci-lint run

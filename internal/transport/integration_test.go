@@ -10,15 +10,17 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/alexeyu/uploadfun/internal/testdocker"
+	"github.com/alexeyu/uploadfun/internal/testservers"
 )
 
 const (
@@ -38,8 +40,8 @@ const (
 var itHome string
 
 func TestMain(m *testing.M) {
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		fmt.Println("skipping integration tests: docker not available:", err)
+	if !testdocker.Available() {
+		fmt.Println("skipping integration tests: docker not available")
 		os.Exit(0)
 	}
 
@@ -68,93 +70,32 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func mustRunDocker(args ...string) {
-	out, err := exec.Command("docker", args...).CombinedOutput()
-	if err != nil {
-		fmt.Printf("docker %v failed: %v\n%s\n", args, err, out)
-		os.Exit(1)
-	}
-}
-
-func waitForPort(addr string, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
-		if err == nil {
-			_ = conn.Close()
-			return
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-	fmt.Printf("timed out waiting for %s to accept connections\n", addr)
-	os.Exit(1)
-}
-
 func startPureFTPD() func() {
-	cleanup := exec.Command("docker", "rm", "-f", ftpContainerName)
-	_ = cleanup.Run() //nolint:errcheck // best-effort cleanup of a leftover run
-
 	certPath, err := filepath.Abs("testdata/pure-ftpd.pem")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	mustRunDocker("run", "-d", "--name", ftpContainerName,
-		"-p", fmt.Sprintf("%d:21", ftpControlPort),
-		"-p", ftpDataPorts+":"+ftpDataPorts,
-		"-v", certPath+":/etc/ssl/private/pure-ftpd.pem:ro",
-		"-e", "PUBLICHOST=127.0.0.1",
-		"-e", "FTP_USER_NAME="+testUser,
-		"-e", "FTP_USER_PASS="+testPassword,
-		"-e", "FTP_USER_HOME=/home/ftpusers/"+testUser,
-		"-e", "ADDED_FLAGS=--tls=1",
-		"stilliard/pure-ftpd:hardened",
-	)
-	waitForPort(fmt.Sprintf("127.0.0.1:%d", ftpControlPort), 30*time.Second)
-
-	return func() { _ = exec.Command("docker", "rm", "-f", ftpContainerName).Run() }
+	return testservers.StartPureFTPD(testservers.PureFTPDOptions{
+		ContainerName: ftpContainerName,
+		ControlPort:   ftpControlPort,
+		DataPortRange: ftpDataPorts,
+		CertPath:      certPath,
+		Username:      testUser,
+		Password:      testPassword,
+	})
 }
 
 func startAtmozSFTP() func() {
-	cleanup := exec.Command("docker", "rm", "-f", sftpContainerName)
-	_ = cleanup.Run() //nolint:errcheck // best-effort cleanup of a leftover run
-
-	mustRunDocker("run", "-d", "--name", sftpContainerName,
-		"-p", fmt.Sprintf("%d:22", sftpPort),
-		"atmoz/sftp:latest",
-		fmt.Sprintf("%s:%s:1001:1001:upload", testUser, testPassword),
-	)
-	waitForPort(fmt.Sprintf("127.0.0.1:%d", sftpPort), 30*time.Second)
-
-	// The container's SSH host key is regenerated every run, so populate
-	// known_hosts for it before any test dials in - DialSFTP refuses to
-	// connect to an unrecognized host.
-	if err := os.MkdirAll(filepath.Join(itHome, ".ssh"), 0o700); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	var scanOut []byte
-	var scanErr error
-	for attempt := 0; attempt < 5; attempt++ {
-		scanOut, scanErr = exec.Command(
-			"ssh-keyscan", "-p", fmt.Sprintf("%d", sftpPort), "-t", "ed25519,rsa", "127.0.0.1",
-		).Output()
-		if scanErr == nil && len(scanOut) > 0 {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	if scanErr != nil || len(scanOut) == 0 {
-		fmt.Println("ssh-keyscan failed:", scanErr)
-		os.Exit(1)
-	}
-	if err := os.WriteFile(filepath.Join(itHome, ".ssh", "known_hosts"), scanOut, 0o600); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	return func() { _ = exec.Command("docker", "rm", "-f", sftpContainerName).Run() }
+	return testservers.StartAtmozSFTP(testservers.AtmozSFTPOptions{
+		ContainerName:  sftpContainerName,
+		Port:           sftpPort,
+		Username:       testUser,
+		Password:       testPassword,
+		ChrootSubdir:   "upload",
+		KnownHostsHome: itHome,
+	})
 }
 
 // verifyingUploader is the subset of FTPClient/SFTPClient that
@@ -276,4 +217,59 @@ func TestIntegrationSFTP(t *testing.T) {
 	// OpenSSH's ChrootDirectory rules) must not itself be writable - only
 	// the "upload" subdirectory declared when the container started is.
 	exerciseUploadDeleteVerify(t, client, "upload/payload.txt")
+}
+
+// TestIntegrationSFTPLargeUploadIntegrity checks content, not just size,
+// for an upload spanning many SFTP write packets - the kind of transfer
+// exercised by UseConcurrentWrites (internal/transport/sftp.go). Verify
+// is size-only, and exerciseUploadDeleteVerify's tiny payload fits in a
+// single packet, so neither would catch a chunking/offset regression in
+// the multi-packet path.
+func TestIntegrationSFTPLargeUploadIntegrity(t *testing.T) {
+	client, err := DialSFTP(context.Background(), SFTPDialOptions{
+		Host:           "127.0.0.1",
+		Port:           sftpPort,
+		Username:       testUser,
+		Password:       testPassword,
+		ConnectTimeout: 10 * time.Second,
+		StallTimeout:   30 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("DialSFTP: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	// 8MiB spans hundreds of the client's 32KiB write packets.
+	content := make([]byte, 8*1024*1024)
+	if _, err := rand.Read(content); err != nil {
+		t.Fatalf("generate payload: %v", err)
+	}
+
+	const remoteName = "upload/large.bin"
+	var lastSent int64
+	uploadErr := client.Upload(remoteName, bytes.NewReader(content), int64(len(content)),
+		func(sent, total int64) { lastSent = sent })
+	if uploadErr != nil {
+		t.Fatalf("Upload: %v", uploadErr)
+	}
+	if lastSent != int64(len(content)) {
+		t.Errorf("expected final progress callback to report %d bytes sent, got %d",
+			len(content), lastSent)
+	}
+	defer func() { _ = client.Delete(remoteName) }()
+
+	f, err := client.sftp.Open(remoteName)
+	if err != nil {
+		t.Fatalf("open remote file for readback: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read back uploaded file: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("uploaded content does not match source (got %d bytes, want %d bytes)",
+			len(got), len(content))
+	}
 }

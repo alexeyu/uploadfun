@@ -4,12 +4,63 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
 )
+
+// failWriteCloser records what was written and fails on Write or Close as
+// configured, standing in for an sftp.File whose server rejects the upload.
+type failWriteCloser struct {
+	buf      strings.Builder
+	writeErr error
+	closeErr error
+}
+
+func (f *failWriteCloser) Write(p []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return f.buf.Write(p)
+}
+
+func (f *failWriteCloser) Close() error { return f.closeErr }
+
+func TestStreamToClose(t *testing.T) {
+	errWrite := errors.New("write failed")
+	errClose := errors.New("close failed: quota exceeded")
+
+	tests := []struct {
+		name     string
+		writeErr error
+		closeErr error
+		want     error
+	}{
+		{name: "success", want: nil},
+		{name: "close error surfaces when copy succeeds", closeErr: errClose, want: errClose},
+		{name: "copy error takes precedence over close error",
+			writeErr: errWrite, closeErr: errClose, want: errWrite},
+		{name: "copy error alone", writeErr: errWrite, want: errWrite},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &failWriteCloser{writeErr: tt.writeErr, closeErr: tt.closeErr}
+			r := strings.NewReader("payload")
+			err := streamToClose(w, r, int64(r.Len()), nil)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("streamToClose error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+var _ io.WriteCloser = (*failWriteCloser)(nil)
 
 func TestResolveSFTPPort(t *testing.T) {
 	if got := resolvePort(0, defaultSFTPPort); got != defaultSFTPPort {

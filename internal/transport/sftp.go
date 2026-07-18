@@ -188,11 +188,23 @@ func (c *SFTPClient) Upload(
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	return streamToClose(f, r, size, progress)
+}
 
+// streamToClose copies r into w and then closes w. Some servers only
+// report failure (quota, gateway scanning, delayed writes) at close, so a
+// successful copy isn't proof of a good upload - the close error is
+// surfaced when the copy itself succeeded.
+func streamToClose(
+	w io.WriteCloser, r io.Reader, size int64, progress func(sent, total int64),
+) error {
 	pr := &progressReader{r: r, total: size, onProgress: progress}
-	_, err = io.Copy(f, pr)
-	return err
+	_, copyErr := io.Copy(w, pr)
+	closeErr := w.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
 
 // Size returns the remote file's size in bytes.

@@ -27,9 +27,8 @@ type FTPDialOptions struct {
 }
 
 // FTPClient wraps a connected FTP (or FTPS, via explicit AUTH TLS)
-// session. Not safe for concurrent use, matching the underlying library
-// - this mirrors the "one reused connection per endpoint worker" model
-// the engine drives it with.
+// session. Not safe for concurrent use, matching the "one reused
+// connection per endpoint worker" model the engine drives it with.
 type FTPClient struct {
 	conn *ftp.ServerConn
 }
@@ -76,13 +75,9 @@ func dial(ctx context.Context, cfg dialConfig) (*FTPClient, error) {
 		return nil, err
 	}
 
-	// Session is up: clear the connect deadline and hand transfers over to
-	// the idle stall timeout instead. Also detach the dialer from the
-	// connect-scoped ctx: the caller cancels it the instant Connect
-	// returns, but the ftp library reuses d.dial for every later PASV data
-	// connection (STOR, LIST, ...), which must not inherit that
-	// cancellation - those dials are already bounded by d.timeout and,
-	// once open, by the stall guard.
+	// Session is up: clear the connect deadline and switch to the idle
+	// stall timeout, and detach d from the connect-scoped ctx - later
+	// data-connection dials must not inherit it.
 	if d.ctrlConn != nil {
 		clearDeadline(d.ctrlConn)
 	}
@@ -110,30 +105,26 @@ func (d *ftpDialer) dial(network, address string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The first dial is the control connection: hand back the (guarded)
-	// conn - the library does the AUTH TLS upgrade itself - with a deadline
-	// covering banner/AUTH-TLS/login. Data connections opened later must
-	// not inherit that deadline.
+	// The first dial is the control connection: hand back the guarded
+	// conn (library does its own AUTH TLS upgrade) with a deadline
+	// covering banner/AUTH-TLS/login; later data dials must not inherit it.
 	if d.ctrlConn == nil {
 		armConnectDeadline(conn, d.timeout)
 		d.ctrlConn = conn
 		return d.guard.wrap(conn), nil
 	}
-	// Data connection: with a custom dial func the library skips its own
-	// TLS wrapping, so wrap it here with the same config (shared
-	// ClientSessionCache + ServerName) that lets the data session resume
-	// the control session - pure-ftpd and others require it.
+	// Data connection: a custom dial func skips the library's own TLS
+	// wrapping, so wrap it here with the same config (shared session
+	// cache + ServerName) so pure-ftpd et al. allow the session resume.
 	if d.tlsConfig != nil {
 		return tls.Client(d.guard.wrap(conn), d.tlsConfig), nil
 	}
 	return d.guard.wrap(conn), nil
 }
 
-// ftpDialAndLogin opens the FTP control connection through d's custom dial
-// func and authenticates. Routing the dial through d lets us bound the whole
-// connect+login sequence, not just the TCP dial that DialWithTimeout/
-// DialWithContext cover: a server that accepts TCP then stalls on the
-// banner, AUTH TLS, or the USER/PASS exchange would otherwise block forever.
+// ftpDialAndLogin opens the control connection through d's custom dial
+// func and authenticates, bounding the whole connect+login sequence -
+// not just the TCP dial - against a server that stalls mid-handshake.
 func ftpDialAndLogin(addr string, cfg dialConfig, d *ftpDialer) (*ftp.ServerConn, error) {
 	dialOpts := []ftp.DialOption{ftp.DialWithDialFunc(d.dial)}
 	if cfg.explicitTLS {
@@ -152,15 +143,8 @@ func ftpDialAndLogin(addr string, cfg dialConfig, d *ftpDialer) (*ftp.ServerConn
 }
 
 // resolveTLSConfig fills in ServerName and ClientSessionCache when
-// missing, on a clone so a caller-supplied *tls.Config is never mutated.
-// Both matter beyond cosmetics: Go's crypto/tls only attempts session
-// resumption when ServerName is non-empty (it's part of the session
-// cache key) and ClientSessionCache is set. Servers that enforce "the
-// data connection must resume the control connection's TLS session" as
-// an anti-hijacking measure - pure-ftpd among them - silently accept the
-// data connection's TCP handshake and then drop it once the session
-// fails to match, which surfaces to callers as a bare io.EOF on
-// upload/download with no indication it was a TLS policy rejection.
+// missing, on a clone so the caller's config isn't mutated - servers
+// enforcing data-connection TLS resumption (e.g. pure-ftpd) need both set.
 func resolveTLSConfig(host string, cfg *tls.Config) *tls.Config {
 	resolved := &tls.Config{}
 	if cfg != nil {

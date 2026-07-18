@@ -163,11 +163,8 @@ func (s *fakeFTPServer) serve() {
 }
 
 // TestDialFTPDataConnSurvivesConnectCtxCancellation guards against a
-// regression where the ftpDialer kept using the connect-scoped ctx (from
-// dial's ftpDialer.ctx field) for data connections opened after login. In
-// production, dispatch.go's connect() cancels that ctx the instant Connect
-// returns - reproduced here - so a PASV data dial made against the stale
-// ctx during Upload would fail immediately with "operation was canceled".
+// regression where ftpDialer kept using the connect-scoped ctx for data
+// connections opened after login, which dispatch.go cancels on return.
 func TestDialFTPDataConnSurvivesConnectCtxCancellation(t *testing.T) {
 	server := newFakeFTPServer(t)
 	host, portStr, err := net.SplitHostPort(server.addr())

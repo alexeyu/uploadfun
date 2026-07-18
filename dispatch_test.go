@@ -433,13 +433,8 @@ func TestDispatchCircuitBreakerTripsMidFileWhenLowerThanAttempts(t *testing.T) {
 }
 
 // TestDispatchCircuitBreakerTripMidFileIsExplainedAndRestBundled is a
-// regression test for a reported bug: with attempts=3 (default) and
-// max_consecutive_connect_failures=5, the breaker tripped partway through
-// file2's own retry loop (attempt 2 of 3) rather than at a file boundary.
-// The observed bug had two parts: file2 got no explanation for stopping
-// early, and files 3-4 each got their own "endpoint unreachable" message
-// carrying a nonsensical Attempt value (the global failure count, 5,
-// rather than anything meaningful for a file that was never dialed).
+// regression test: the breaker used to trip mid-file with no explanation
+// and no bundled EndpointUnreachableEvent for the remaining files.
 func TestDispatchCircuitBreakerTripMidFileIsExplainedAndRestBundled(t *testing.T) {
 	f := &fakeUploader{failConnectN: 999}
 	withFakeUploader(t, f)

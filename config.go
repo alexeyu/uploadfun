@@ -30,10 +30,9 @@ type rawEndpoint struct {
 	rawPolicy `yaml:",inline"`
 }
 
-// rawPolicy is the yaml-level view of the attempts/timeout fields that
-// appear both at the config's top level (as global defaults) and on each
-// endpoint (as overrides). Pointers distinguish "unset" from an explicit
-// zero.
+// rawPolicy is the yaml-level view of attempts/timeout fields shared by
+// the config's top level (global defaults) and each endpoint (overrides).
+// Pointers distinguish "unset" from an explicit zero.
 type rawPolicy struct {
 	Attempts                      *int    `yaml:"attempts"`
 	RetryDelay                    *string `yaml:"retry_delay"`
@@ -46,9 +45,7 @@ var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // LoadConfig reads and validates a YAML endpoint config, resolving
 // ${ENV_VAR} interpolation and global-default/per-endpoint-override
-// merging along the way. It validates the whole file and collects every
-// error rather than stopping at the first, so a caller can report them
-// all at once.
+// merging. It collects every error instead of stopping at the first.
 func LoadConfig(path string) ([]Endpoint, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -79,10 +76,8 @@ func LoadConfig(path string) ([]Endpoint, error) {
 	return endpoints, nil
 }
 
-// retryPolicy is a resolved set of attempts/timeout values. The config's
-// top level resolves one (over the built-in defaults) to act as the
-// global defaults; each endpoint then resolves its own overrides on top
-// of that.
+// retryPolicy is rawPolicy resolved to concrete values, layered
+// built-ins -> config globals -> per-endpoint overrides.
 type retryPolicy struct {
 	attempts                      int
 	retryDelay                    time.Duration
@@ -91,7 +86,6 @@ type retryPolicy struct {
 	maxConsecutiveConnectFailures int
 }
 
-// defaultPolicy is the built-in policy applied before any config values.
 func defaultPolicy() retryPolicy {
 	return retryPolicy{
 		attempts:                      DefaultAttempts,
@@ -294,8 +288,6 @@ func resolvePrivateKeyPath(privateKey string) (string, error) {
 	return expandHome(privateKey)
 }
 
-// parseDuration returns def when raw is unset, otherwise the parsed
-// duration or the error from parsing it.
 func parseDuration(raw *string, def time.Duration) (time.Duration, error) {
 	if raw == nil {
 		return def, nil
@@ -303,9 +295,6 @@ func parseDuration(raw *string, def time.Duration) (time.Duration, error) {
 	return time.ParseDuration(*raw)
 }
 
-// parseNonNegativeDuration is parseDuration for fields where zero is
-// meaningful (retry immediately; stall protection disabled) but a negative
-// value is always a mistake.
 func parseNonNegativeDuration(raw *string, def time.Duration) (time.Duration, error) {
 	d, err := parseDuration(raw, def)
 	if err == nil && d < 0 {
@@ -314,8 +303,6 @@ func parseNonNegativeDuration(raw *string, def time.Duration) (time.Duration, er
 	return d, err
 }
 
-// parsePositiveDuration is parseDuration for connect_timeout, where zero
-// would arm an already-expired dial deadline and fail every connect.
 func parsePositiveDuration(raw *string, def time.Duration) (time.Duration, error) {
 	d, err := parseDuration(raw, def)
 	if err == nil && d <= 0 {
@@ -324,10 +311,9 @@ func parsePositiveDuration(raw *string, def time.Duration) (time.Duration, error
 	return d, err
 }
 
-// interpolateEnv replaces every ${VAR} occurrence in s with the value of
-// the VAR environment variable. It's an error for a referenced variable
-// to be unset, so a typo'd or forgotten env var is caught here rather
-// than surfacing as a confusing auth failure at upload time.
+// interpolateEnv replaces every ${VAR} in s with its env value. An unset
+// variable is an error, so a typo is caught here rather than surfacing
+// as a confusing auth failure at upload time.
 func interpolateEnv(s string) (string, error) {
 	var missing []string
 	result := envVarPattern.ReplaceAllStringFunc(s, func(match string) string {

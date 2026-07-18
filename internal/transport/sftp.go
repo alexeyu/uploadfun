@@ -19,9 +19,8 @@ import (
 const defaultSFTPPort = 22
 
 // SFTPDialOptions configures an SSH/SFTP connection. If both Password
-// and PrivateKeyPath are set, PrivateKeyPath takes priority and Password
-// is tried as the key's passphrase; otherwise whichever one is set is
-// used on its own.
+// and PrivateKeyPath are set, the key takes priority and Password is
+// tried as its passphrase; otherwise whichever is set is used alone.
 type SFTPDialOptions struct {
 	Host           string
 	Port           int // 0 means defaultSFTPPort
@@ -40,10 +39,8 @@ type SFTPClient struct {
 }
 
 // DialSFTP connects over SSH and opens an SFTP session. The remote host
-// key is verified against the current user's ~/.ssh/known_hosts - there
-// is no insecure-by-default fallback; an unrecognized host fails with a
-// clear error, matching OpenSSH's own trust-on-first-use flow (`ssh` (or
-// `ssh-keyscan`) into the host once to populate known_hosts, then retry).
+// key is verified against ~/.ssh/known_hosts - no insecure fallback; an
+// unrecognized host fails, matching OpenSSH's trust-on-first-use flow.
 func DialSFTP(ctx context.Context, opts SFTPDialOptions) (*SFTPClient, error) {
 	cfg, err := sshClientConfig(opts)
 	if err != nil {
@@ -126,9 +123,8 @@ func sftpAuthMethods(opts SFTPDialOptions) ([]ssh.AuthMethod, error) {
 }
 
 // loadPrivateKey tries parsing path as an unencrypted key first - a key
-// isn't necessarily protected just because Password is also set (Password
-// may be present for some other endpoint reason) - and only falls back
-// to passphrase-protected parsing if the key itself demands it.
+// isn't necessarily protected just because Password is also set - and
+// only falls back to passphrase parsing if the key itself demands it.
 func loadPrivateKey(path, passphrase string) (ssh.Signer, error) {
 	keyBytes, err := os.ReadFile(path)
 	if err != nil {

@@ -8,8 +8,6 @@ import (
 	"github.com/alexeyu/uploadfun"
 )
 
-// outputMode controls which events reach stdout; independent of json,
-// which only controls how.
 type outputMode int
 
 const (
@@ -39,10 +37,6 @@ func newPrinter(stdout, stderr io.Writer, mode outputMode, jsonOutput bool) *pri
 	return &printer{stdout: stdout, stderr: stderr, mode: mode, json: jsonOutput}
 }
 
-// processEvents drains events, printing each per the printer's mode, and
-// reports whether any endpoint finished with at least one failed file
-// (or, for --dry-run, at least one endpoint that failed to connect/
-// authenticate/list) - the exit-code-1 condition.
 func processEvents(events <-chan uploadfun.UploadEvent, p *printer) (failed bool) {
 	for ev := range events {
 		p.handle(ev)
@@ -76,14 +70,9 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			p.write(p.stdout, e, msg)
 		}
 	case uploadfun.FileErrorEvent:
-		// Errors always print, even in --quiet - "nothing" in the output
-		// modes table means non-error stdout output, not silence on
-		// failure.
 		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)
 		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointUnreachableEvent:
-		// Always prints, even in --quiet, same as FileErrorEvent - one
-		// line covers every skipped file rather than repeating per file.
 		msg := fmt.Sprintf(
 			"[%s] endpoint unreachable after %d consecutive connect failures: skipping %d remaining file(s)",
 			e.Endpoint, e.ConsecutiveFailures, len(e.SkippedFiles),
@@ -96,7 +85,6 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		}
 	case uploadfun.DryRunEvent:
 		if e.Err != nil {
-			// Always print, even in --quiet, same as FileErrorEvent.
 			p.write(p.stderr, e, fmt.Sprintf("[%s] dry-run failed: %s", e.Endpoint, e.Err))
 			return
 		}

@@ -99,11 +99,9 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	return opts, exitOK
 }
 
-// parseInterleaved runs fs.Parse repeatedly so flags and positional
-// arguments may appear in any order - the documented invocation puts
-// paths before --config, but stdlib flag otherwise stops parsing at the
-// first positional. It returns the collected positionals, or the first
-// fs.Parse error (including flag.ErrHelp).
+// parseInterleaved runs fs.Parse repeatedly so flags and positionals may
+// appear in any order - stdlib flag otherwise stops at the first
+// positional. Returns the collected positionals, or the first error.
 func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 	var positionals []string
 	rest := args
@@ -120,10 +118,9 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
-// expandPaths turns the positional file/dir arguments into a flat file
-// list: directories expand non-recursively, every regular file included,
-// no extension filtering, subdirectories and hidden/dotfiles silently
-// skipped.
+// expandPaths turns positional file/dir arguments into a flat file list:
+// directories expand non-recursively, subdirectories and hidden/dotfiles
+// are skipped.
 func expandPaths(paths []string) ([]string, error) {
 	var files []string
 	for _, p := range paths {
@@ -160,12 +157,9 @@ func expandPaths(paths []string) ([]string, error) {
 	return files, nil
 }
 
-// checkBasenameCollisions rejects inputs that would map to the same remote
-// filename. The remote name is a file's basename (see dispatch's
-// remoteName), so two inputs sharing a basename - e.g. a/img.jpg and
-// b/img.jpg, or the same path passed twice - would, under the default
-// delete-first overwrite, have one silently clobber the other. Catch it up
-// front rather than reporting success for a file that was overwritten.
+// checkBasenameCollisions rejects inputs that would map to the same
+// remote filename (its basename) - e.g. a/img.jpg and b/img.jpg - which
+// under the default delete-first overwrite would silently clobber.
 func checkBasenameCollisions(files []string) error {
 	seen := make(map[string]string, len(files))
 	for _, f := range files {

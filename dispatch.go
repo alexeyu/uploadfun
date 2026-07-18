@@ -9,22 +9,19 @@ import (
 )
 
 // Uploader is the per-protocol transport implementation an endpoint
-// worker drives. One Uploader is connected once per Endpoint and reused
-// across every file in the batch for as long as nothing fails; any failure
-// disconnects and the next attempt reconnects from scratch.
+// worker drives: connected once per Endpoint and reused across the batch
+// until a failure disconnects it and the next attempt reconnects fresh.
 type Uploader interface {
 	Connect(ctx context.Context, ep Endpoint) error
 	Disconnect(ctx context.Context) error
-	// Delete must treat "remote file doesn't exist" as success (a no-op),
-	// not an error - it's called unconditionally before every upload when
-	// Endpoint.Overwrite is OverwriteDeleteFirst, including the very first
-	// upload of a file that was never there.
+	// Delete must treat "remote file doesn't exist" as success, not an
+	// error - it's called unconditionally before every upload under
+	// OverwriteDeleteFirst.
 	Delete(ctx context.Context, remoteName string) error
 	Upload(ctx context.Context, localPath, remoteName string, progress func(sent, total int64)) error
 	// Verify compares the just-uploaded local file against its remote
-	// copy. method describes what verification was actually performed
-	// (e.g. "size", "size+hash"), so callers can surface the weaker
-	// size-only guarantee distinctly rather than silently.
+	// copy. method describes what was actually performed (e.g. "size",
+	// "size+hash") so callers can surface the weaker guarantee.
 	Verify(ctx context.Context, localPath, remoteName string) (method string, err error)
 	// List returns remote directory entries; used only for --dry-run.
 	List(ctx context.Context) ([]string, error)
@@ -64,9 +61,8 @@ func runEndpoint(
 }
 
 // endpointWorker uploads a batch of files to one endpoint over a single
-// reused connection, reconnecting and retrying per the endpoint's
-// Attempts/RetryDelay budget. It owns the connection's lifecycle so the
-// retry loop and file iteration don't have to track it directly.
+// reused connection, reconnecting and retrying per Attempts/RetryDelay.
+// It owns the connection's lifecycle so the retry loop doesn't have to.
 type endpointWorker struct {
 	ctx    context.Context
 	ep     Endpoint
@@ -76,12 +72,8 @@ type endpointWorker struct {
 
 	connected bool
 	// consecutiveConnectFailures counts connect failures since the last
-	// successful connect. Unlike the per-file attempt loop, it persists
-	// across files: once it reaches ep.MaxConsecutiveConnectFailures,
-	// circuitOpen trips and the rest of the batch is skipped without
-	// dialing again, rather than giving every remaining file its own fresh
-	// Attempts budget against a server that has already demonstrated it
-	// isn't answering.
+	// success, persisting across files (unlike the per-file attempt loop)
+	// so a dead server doesn't get a fresh Attempts budget per file.
 	consecutiveConnectFailures int
 }
 
@@ -110,23 +102,16 @@ func (w *endpointWorker) run(files []string) {
 	w.events <- EndpointDoneEvent{Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed}
 }
 
-// circuitOpen reports whether the endpoint has racked up enough consecutive
-// connect failures (MaxConsecutiveConnectFailures) to be treated as
-// unreachable for the rest of the batch. This is deliberately independent
-// of Attempts - a generous per-file retry budget shouldn't force every
-// remaining file to also get its own full retry budget against a dead
-// server - so uploadFile checks it too and can bail out of a single file's
-// attempt loop early, not just between files.
+// circuitOpen reports whether consecutiveConnectFailures has reached
+// MaxConsecutiveConnectFailures, meaning the endpoint should be treated
+// as unreachable for the rest of the batch.
 func (w *endpointWorker) circuitOpen() bool {
 	return w.consecutiveConnectFailures >= w.ep.MaxConsecutiveConnectFailures
 }
 
-// skipRemaining marks every file in files as failed without attempting to
-// connect, once circuitOpen has tripped, reporting them all in a single
-// EndpointUnreachableEvent rather than one FileErrorEvent apiece - with a
-// large batch, a repeated per-file message adds noise without adding
-// information once the endpoint has already been declared unreachable.
-// Returns len(files) for the caller's failed tally.
+// skipRemaining marks every file in files as failed without connecting,
+// reporting them in one EndpointUnreachableEvent rather than a
+// FileErrorEvent per file. Returns len(files) for the caller's tally.
 func (w *endpointWorker) skipRemaining(files []string) int {
 	w.events <- EndpointUnreachableEvent{
 		Endpoint:            w.ep.Name,
@@ -184,9 +169,8 @@ const (
 )
 
 // connect establishes the reused connection, bounding the whole
-// connect+login sequence with the endpoint's ConnectTimeout. A failure
-// caused only by ctx cancellation reports connectCanceled and emits no
-// event, since it isn't a real endpoint failure.
+// connect+login sequence with ConnectTimeout. A failure caused only by
+// ctx cancellation reports connectCanceled and emits no event.
 func (w *endpointWorker) connect(file string, attempt int) connectResult {
 	connectCtx, cancel := context.WithTimeout(w.ctx, w.ep.ConnectTimeout)
 	err := w.up.Connect(connectCtx, w.ep)
@@ -207,10 +191,9 @@ func (w *endpointWorker) connect(file string, attempt int) connectResult {
 	return connectOK
 }
 
-// reportGivingUp explains why a file's own attempt loop stopped short of
-// its Attempts budget: the circuit breaker tripped mid-file (only possible
-// when MaxConsecutiveConnectFailures < Attempts). Without this, seeing
-// fewer attempts than configured would look unexplained.
+// reportGivingUp explains why a file's attempt loop stopped short of its
+// Attempts budget: the circuit breaker tripped mid-file (possible when
+// MaxConsecutiveConnectFailures < Attempts).
 func (w *endpointWorker) reportGivingUp(file string, attempt int) {
 	err := fmt.Errorf(
 		"endpoint unreachable: %d consecutive connect failures, giving up on this file",

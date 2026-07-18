@@ -7,10 +7,8 @@ import (
 )
 
 // FTPSDialOptions configures an explicit-AUTH-TLS FTP connection (the
-// ftps protocol). The control connection starts on the same port as
-// plain FTP (21 by default) and is upgraded to TLS via the AUTH TLS
-// command, rather than dialing straight into TLS on a separate port
-// (implicit FTPS, not supported here).
+// ftps protocol): the control connection starts on port 21 like plain
+// FTP and upgrades via AUTH TLS, not implicit FTPS on a separate port.
 type FTPSDialOptions struct {
 	Host           string
 	Port           int // 0 means defaultFTPPort
@@ -18,10 +16,9 @@ type FTPSDialOptions struct {
 	Password       string
 	ConnectTimeout time.Duration
 	StallTimeout   time.Duration // 0 disables idle-stall protection
-	// TLSConfig overrides the default. Optional; any of ServerName or
+	// TLSConfig overrides the default. Optional; ServerName or
 	// ClientSessionCache left unset are filled in automatically (see
-	// resolveTLSConfig) - both are required for many servers' data
-	// connections to work at all, not just cosmetic defaults.
+	// resolveTLSConfig) - required for many servers' data connections.
 	TLSConfig *tls.Config
 }
 

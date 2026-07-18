@@ -16,8 +16,7 @@ var newUploader = newRealUploader
 
 // remoteClient is the common surface every internal/transport client
 // (FTPClient, SFTPClient) exposes; transportUploader adapts it to the
-// Uploader interface without either side depending on the other's
-// package.
+// Uploader interface without either package depending on the other.
 type remoteClient interface {
 	Close() error
 	Delete(remoteName string) error
@@ -26,12 +25,9 @@ type remoteClient interface {
 	List() ([]string, error)
 }
 
-// transportUploader adapts one internal/transport client to the Uploader
-// interface dispatch.go drives. The underlying clients don't support
-// per-operation cancellation once connected: ctx is honored only at Connect
-// time, and an in-flight upload/delete/verify/list runs to completion (or
-// its own network-level timeout) even if ctx is canceled mid-call.
-// Cancellation still takes effect promptly between attempts and files.
+// transportUploader adapts one internal/transport client to the
+// Uploader interface dispatch.go drives. ctx is honored only at Connect
+// time; an in-flight call runs to completion even if ctx is canceled.
 type transportUploader struct {
 	dial   func(ctx context.Context, ep Endpoint) (remoteClient, error)
 	client remoteClient

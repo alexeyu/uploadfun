@@ -1,16 +1,10 @@
 //go:build integration
 
 // Real-server integration tests, gated behind the "integration" build
-// tag - they need Docker and exercise actual FTP/FTPS/SFTP servers, so
-// they never run as part of a plain `go test`. Run with:
+// tag since they need Docker. Skipped (not failed) if Docker isn't
+// reachable. Run with:
 //
 //	go test -tags integration ./internal/transport/...
-//
-// TestMain starts a stilliard/pure-ftpd container (serving both plain
-// FTP and, via a pre-generated test-only cert in testdata/, explicit
-// AUTH TLS) and an atmoz/sftp container, on fixed local ports. If Docker
-// isn't reachable, the whole run is skipped with a message rather than
-// failing - matching "never block a contributor without Docker".
 package transport
 
 import (

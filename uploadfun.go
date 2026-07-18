@@ -13,10 +13,8 @@ const (
 	DefaultConnectTimeout = 30 * time.Second
 	DefaultStallTimeout   = 5 * time.Minute
 	// DefaultMaxConsecutiveConnectFailures is a floor, not a multiple of
-	// Attempts: even an endpoint configured with Attempts: 1 (no per-file
-	// retries) gets a few tries across the batch before being written off
-	// as unreachable, rather than abandoning the rest of the files after
-	// a single connect blip.
+	// Attempts: even Attempts: 1 gets a few tries across the batch before
+	// being written off, rather than quitting after one connect blip.
 	DefaultMaxConsecutiveConnectFailures = 3
 )
 
@@ -35,9 +33,8 @@ type OverwriteMode string
 
 const (
 	// OverwriteDeleteFirst deletes any existing remote file before
-	// uploading. It is the default: it matches the prior implementation's
-	// proven behavior and avoids servers that reject a PUT over an
-	// existing file.
+	// uploading. It's the default: it avoids servers that reject a PUT
+	// over an existing file.
 	OverwriteDeleteFirst OverwriteMode = "delete-first"
 	// OverwriteDirect uploads straight over any existing remote file,
 	// avoiding the brief window where the remote file doesn't exist at
@@ -67,10 +64,7 @@ type Endpoint struct {
 	StallTimeout time.Duration
 	// MaxConsecutiveConnectFailures bounds how many connect failures in a
 	// row this endpoint tolerates across the whole batch before the rest
-	// of the files are skipped as unreachable, rather than each getting
-	// its own fresh Attempts budget. Independent of Attempts: it's a
-	// signal about the endpoint's overall reachability, not a per-file
-	// retry count.
+	// of the files are skipped as unreachable, independent of Attempts.
 	MaxConsecutiveConnectFailures int
 }
 
@@ -84,10 +78,9 @@ type Options struct {
 	DryRun bool
 }
 
-// UploadEvent is the vocabulary of events sent on the channel returned by
-// Upload. Consumers type-switch on it to distinguish ProgressEvent,
-// FileSuccessEvent, FileErrorEvent, EndpointUnreachableEvent, and
-// EndpointDoneEvent.
+// UploadEvent is the vocabulary of events sent on the channel returned
+// by Upload; consumers type-switch on it to distinguish the event kinds
+// below.
 type UploadEvent interface {
 	uploadEvent()
 }
@@ -110,9 +103,7 @@ type FileSuccessEvent struct {
 	Endpoint string `json:"endpoint"`
 	File     string `json:"file"`
 	// VerifyMethod describes what verification was performed ("size",
-	// "size+hash"), or "" if verification was disabled (NoVerify). Lets
-	// a caller surface the weaker size-only guarantee distinctly rather
-	// than silently.
+	// "size+hash"), or "" if disabled (NoVerify).
 	VerifyMethod string `json:"verifyMethod,omitempty"`
 }
 
@@ -134,11 +125,9 @@ type FileErrorEvent struct {
 
 func (FileErrorEvent) uploadEvent() {}
 
-// EndpointUnreachableEvent reports that, after ConsecutiveFailures connect
-// failures in a row (see Endpoint.MaxConsecutiveConnectFailures), one
-// endpoint's worker gave up on the rest of the batch without individually
-// attempting to connect for each of SkippedFiles - a single event covering
-// every skipped file, rather than a FileErrorEvent per file.
+// EndpointUnreachableEvent reports that, after ConsecutiveFailures
+// connect failures in a row, one endpoint's worker gave up on the rest
+// of the batch, covering every skipped file in a single event.
 type EndpointUnreachableEvent struct {
 	Endpoint            string   `json:"endpoint"`
 	ConsecutiveFailures int      `json:"consecutiveFailures"`
@@ -157,11 +146,9 @@ type EndpointDoneEvent struct {
 
 func (EndpointDoneEvent) uploadEvent() {}
 
-// DryRunEvent reports the outcome of a --dry-run connectivity check for
-// one endpoint: connect, authenticate, list the remote directory,
-// disconnect - no transfer, no delete, no writes. Exactly one is sent
-// per endpoint when Options.DryRun is set, replacing the normal
-// per-file event sequence entirely.
+// DryRunEvent reports the outcome of a --dry-run connectivity check:
+// connect, authenticate, list the remote directory. Exactly one is sent
+// per endpoint when Options.DryRun is set, replacing the per-file events.
 type DryRunEvent struct {
 	Endpoint string   `json:"endpoint"`
 	Entries  []string `json:"entries,omitempty"`
@@ -172,13 +159,9 @@ type DryRunEvent struct {
 
 func (DryRunEvent) uploadEvent() {}
 
-// Upload fans out files to endpoints: one goroutine per endpoint, each
-// uploading files sequentially over a single reused connection, retrying
-// per Endpoint.Attempts/RetryDelay. Every worker's events land on the
-// returned channel, which is closed once every endpoint worker has
-// finished. Canceling ctx does not close the channel on its own: workers
-// stop retrying and starting new transfers promptly, but an in-flight
-// blocking transfer still runs to completion first.
+// Upload fans out files to endpoints, one goroutine per endpoint,
+// retrying per Endpoint.Attempts/RetryDelay. The channel closes once
+// every worker finishes; canceling ctx doesn't stop in-flight transfers.
 func Upload(
 	ctx context.Context, files []string, endpoints []Endpoint, opts Options,
 ) <-chan UploadEvent {

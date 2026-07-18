@@ -1,6 +1,7 @@
 package uploadfun
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,6 +143,24 @@ max_consecutive_connect_failures: 0
 	_, err := LoadConfig(path)
 	if err == nil || !strings.Contains(err.Error(), "max_consecutive_connect_failures: must be >= 1") {
 		t.Fatalf("expected max_consecutive_connect_failures validation error, got %v", err)
+	}
+}
+
+func TestLoadConfigRejectsOutOfRangePort(t *testing.T) {
+	for _, port := range []int{-1, 65536} {
+		path := writeConfig(t, fmt.Sprintf(`
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    port: %d
+    username: u
+    password: p
+`, port))
+		_, err := LoadConfig(path)
+		if err == nil || !strings.Contains(err.Error(), "port: must be between 0 and 65535") {
+			t.Fatalf("port %d: expected port range validation error, got %v", port, err)
+		}
 	}
 }
 

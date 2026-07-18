@@ -10,7 +10,7 @@ func TestNewRealUploaderSelectsProtocol(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if up == nil {
-				t.Fatal("expected a non-nil Uploader")
+				t.Fatal("expected a non-nil uploader")
 			}
 		})
 	}

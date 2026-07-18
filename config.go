@@ -152,6 +152,10 @@ func buildEndpoint(
 	if f.host == "" {
 		errs = append(errs, fmt.Errorf("%s: host is required", label))
 	}
+	if re.Port < 0 || re.Port > 65535 {
+		errs = append(errs, fmt.Errorf(
+			"%s: port: must be between 0 and 65535, got %d", label, re.Port))
+	}
 	if f.username == "" {
 		errs = append(errs, fmt.Errorf("%s: username is required", label))
 	}

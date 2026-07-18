@@ -9,14 +9,14 @@ import (
 	"github.com/alexeyu/uploadfun/internal/transport"
 )
 
-// newUploader selects the Uploader implementation for protocol. It's a
+// newUploader selects the uploader implementation for protocol. It's a
 // package variable so tests can substitute a fake (see withFakeUploader
 // in dispatch_test.go).
 var newUploader = newRealUploader
 
 // remoteClient is the common surface every internal/transport client
 // (FTPClient, SFTPClient) exposes; transportUploader adapts it to the
-// Uploader interface without either package depending on the other.
+// uploader interface without either package depending on the other.
 type remoteClient interface {
 	Close() error
 	Delete(remoteName string) error
@@ -26,7 +26,7 @@ type remoteClient interface {
 }
 
 // transportUploader adapts one internal/transport client to the
-// Uploader interface dispatch.go drives. ctx is honored only at Connect
+// uploader interface dispatch.go drives. ctx is honored only at Connect
 // time; an in-flight call runs to completion even if ctx is canceled.
 type transportUploader struct {
 	dial   func(ctx context.Context, ep Endpoint) (remoteClient, error)
@@ -75,7 +75,7 @@ func (u *transportUploader) List(ctx context.Context) ([]string, error) {
 	return u.client.List()
 }
 
-func newRealUploader(protocol Protocol) (Uploader, error) {
+func newRealUploader(protocol Protocol) (uploader, error) {
 	switch protocol {
 	case ProtocolFTP:
 		return &transportUploader{dial: dialFTPClient}, nil

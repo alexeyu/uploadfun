@@ -5,7 +5,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -178,6 +180,38 @@ func TestExpandPathsNonexistent(t *testing.T) {
 	}
 }
 
+func TestExpandPathsRejectsEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".hidden"), "hidden")
+	if _, err := os.ReadDir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := expandPaths([]string{dir})
+	if err == nil {
+		t.Fatal("expected an error when the expansion yields zero files")
+	}
+	if !strings.Contains(err.Error(), "no regular files found") {
+		t.Errorf("expected a helpful message, got %q", err.Error())
+	}
+}
+
+func TestExpandPathsRejectsNonRegularDirectArg(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo unsupported on this platform: %v", err)
+	}
+
+	_, err := expandPaths([]string{fifo})
+	if err == nil {
+		t.Fatal("expected an error for a non-regular file passed directly")
+	}
+	if !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("expected a helpful message, got %q", err.Error())
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -197,6 +231,40 @@ func TestRunConfigError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "config error") {
 		t.Errorf("expected a config error message, got %q", stderr.String())
+	}
+}
+
+func TestWarnIfConfigReadableWarnsOnGroupOrWorldReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits don't apply on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, path, "endpoints: []\n")
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	warnIfConfigReadable(path, &stderr)
+	if !strings.Contains(stderr.String(), "readable by group/other") {
+		t.Errorf("expected a readability warning, got %q", stderr.String())
+	}
+}
+
+func TestWarnIfConfigReadableSilentWhenPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits don't apply on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, path, "endpoints: []\n")
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	warnIfConfigReadable(path, &stderr)
+	if stderr.Len() != 0 {
+		t.Errorf("expected no warning for a private config file, got %q", stderr.String())
 	}
 }
 

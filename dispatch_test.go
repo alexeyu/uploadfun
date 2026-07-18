@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// fakeUploader is the in-memory Uploader used to test the fan-out/retry
+// fakeUploader is the in-memory uploader used to test the fan-out/retry
 // engine without any network activity.
 type fakeUploader struct {
 	mu sync.Mutex
@@ -111,7 +111,7 @@ func (f *fakeUploader) List(ctx context.Context) ([]string, error) {
 func withFakeUploader(t *testing.T, f *fakeUploader) {
 	t.Helper()
 	prev := newUploader
-	newUploader = func(protocol Protocol) (Uploader, error) {
+	newUploader = func(protocol Protocol) (uploader, error) {
 		return f, nil
 	}
 	t.Cleanup(func() { newUploader = prev })

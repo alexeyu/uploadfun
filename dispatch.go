@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// Uploader is the per-protocol transport implementation an endpoint
+// uploader is the per-protocol transport implementation an endpoint
 // worker drives: connected once per Endpoint and reused across the batch
 // until a failure disconnects it and the next attempt reconnects fresh.
-type Uploader interface {
+type uploader interface {
 	Connect(ctx context.Context, ep Endpoint) error
 	Disconnect(ctx context.Context) error
 	// Delete must treat "remote file doesn't exist" as success, not an
@@ -68,7 +68,7 @@ type endpointWorker struct {
 	ep     Endpoint
 	opts   Options
 	events chan<- UploadEvent
-	up     Uploader
+	up     uploader
 
 	connected bool
 	// consecutiveConnectFailures counts connect failures since the last
@@ -252,7 +252,7 @@ func (w *endpointWorker) sleepBeforeRetry(attempt int) {
 // runDryRun performs the --dry-run connectivity check for one endpoint:
 // connect, authenticate, list the remote directory, disconnect - never
 // touching files.
-func runDryRun(ctx context.Context, up Uploader, ep Endpoint, events chan<- UploadEvent) {
+func runDryRun(ctx context.Context, up uploader, ep Endpoint, events chan<- UploadEvent) {
 	connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
 	err := up.Connect(connectCtx, ep)
 	cancel()

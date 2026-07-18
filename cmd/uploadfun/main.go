@@ -120,7 +120,9 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // expandPaths turns positional file/dir arguments into a flat file list:
 // directories expand non-recursively, subdirectories and hidden/dotfiles
-// are skipped.
+// are skipped. A direct argument that isn't a regular file (FIFO, device,
+// socket) is rejected rather than silently accepted - opening it later
+// could hang the upload forever (e.g. a FIFO with no writer).
 func expandPaths(paths []string) ([]string, error) {
 	var files []string
 	for _, p := range paths {
@@ -129,6 +131,9 @@ func expandPaths(paths []string) ([]string, error) {
 			return nil, err
 		}
 		if !info.IsDir() {
+			if !info.Mode().IsRegular() {
+				return nil, fmt.Errorf("%s: not a regular file", p)
+			}
 			files = append(files, p)
 			continue
 		}
@@ -154,6 +159,9 @@ func expandPaths(paths []string) ([]string, error) {
 	if err := checkBasenameCollisions(files); err != nil {
 		return nil, err
 	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no regular files found in the given path(s)")
+	}
 	return files, nil
 }
 
@@ -173,6 +181,23 @@ func checkBasenameCollisions(files []string) error {
 	return nil
 }
 
+// warnIfConfigReadable prints an advisory to stderr if the config file's
+// permissions let the group or others read it - config files routinely
+// hold plaintext credentials (see config.yml.example), and unlike a
+// missing endpoint field this can't be caught by validation.
+func warnIfConfigReadable(path string, stderr io.Writer) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Mode().Perm()&0o044 != 0 {
+		_, _ = fmt.Fprintf(stderr,
+			"uploadfun: warning: %s is readable by group/other (mode %s); "+
+				"it may contain plaintext credentials, consider chmod 600\n",
+			path, info.Mode().Perm())
+	}
+}
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opts, code := parseArgs(args, stdout, stderr)
 	if opts == nil {
@@ -184,6 +209,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "uploadfun:", err)
 		return exitUsageError
 	}
+
+	warnIfConfigReadable(opts.configPath, stderr)
 
 	endpoints, err := uploadfun.LoadConfig(opts.configPath)
 	if err != nil {

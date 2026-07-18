@@ -162,6 +162,10 @@ func (DryRunEvent) uploadEvent() {}
 // Upload fans out files to endpoints, one goroutine per endpoint,
 // retrying per Endpoint.Attempts/RetryDelay. The channel closes once
 // every worker finishes; canceling ctx doesn't stop in-flight transfers.
+// The caller must keep receiving from the channel until it closes - each
+// worker sends on it unbuffered, so if the caller stops ranging early
+// (e.g. returning on the first error), every worker blocks forever on
+// its next send.
 func Upload(
 	ctx context.Context, files []string, endpoints []Endpoint, opts Options,
 ) <-chan UploadEvent {

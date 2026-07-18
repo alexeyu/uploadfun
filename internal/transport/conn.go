@@ -125,3 +125,12 @@ func (p *progressReader) Read(buf []byte) (int, error) {
 	}
 	return n, err
 }
+
+// Size reports the total bytes the wrapped reader will yield. pkg/sftp's
+// File.ReadFrom type-switches for a Size/Len/Stat method to size its
+// concurrent-write pipeline; without this, it can't tell progressReader's
+// length apart from "unknown" and silently falls back to one write in
+// flight at a time.
+func (p *progressReader) Size() int64 {
+	return p.total
+}

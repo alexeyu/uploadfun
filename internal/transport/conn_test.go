@@ -109,3 +109,10 @@ func TestProgressReaderNilCallback(t *testing.T) {
 		t.Fatalf("unexpected error with nil onProgress: %v", err)
 	}
 }
+
+func TestProgressReaderSize(t *testing.T) {
+	pr := &progressReader{total: 12345}
+	if got := pr.Size(); got != 12345 {
+		t.Errorf("Size() = %d, want 12345", got)
+	}
+}

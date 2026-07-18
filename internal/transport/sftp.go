@@ -100,7 +100,10 @@ func openSFTP(conn net.Conn, addr string, cfg *ssh.ClientConfig) (*SFTPClient, e
 	}
 
 	client := ssh.NewClient(sshConn, chans, reqs)
-	sftpClient, err := sftp.NewClient(client)
+	// UseConcurrentWrites: pkg/sftp defaults to one write packet in flight
+	// at a time, so throughput is capped at maxPacket/RTT - a bad fit for
+	// an upload tool. Concurrent writes pipeline multiple packets instead.
+	sftpClient, err := sftp.NewClient(client, sftp.UseConcurrentWrites(true))
 	if err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("open sftp session: %w", err)

@@ -37,19 +37,6 @@ func resolvePort(port, def int) int {
 	return port
 }
 
-// dirEntryNames collects entry names for a --dry-run listing, dropping the
-// "." and ".." pseudo-entries some servers include so a "N entries" count
-// isn't inflated. name extracts the filename from each transport's entry type.
-func dirEntryNames[T any](entries []T, name func(T) string) []string {
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if n := name(e); n != "." && n != ".." {
-			names = append(names, n)
-		}
-	}
-	return names
-}
-
 // armConnectDeadline gives conn a deadline covering the whole
 // connect+login/handshake phase, so a stalling server fails instead of
 // blocking forever. clearDeadline lifts it once the session is up.

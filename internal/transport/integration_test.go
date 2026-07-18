@@ -104,7 +104,6 @@ type verifyingUploader interface {
 	Upload(remoteName string, r io.Reader, size int64, progress func(sent, total int64)) error
 	Verify(localPath, remoteName string) (string, error)
 	Delete(remoteName string) error
-	List() ([]string, error)
 }
 
 func exerciseUploadDeleteVerify(t *testing.T, client verifyingUploader, remoteName string) {
@@ -135,17 +134,6 @@ func exerciseUploadDeleteVerify(t *testing.T, client verifyingUploader, remoteNa
 	}
 	if method != "size" {
 		t.Errorf("expected verify method %q, got %q", "size", method)
-	}
-
-	names, err := client.List()
-	if err != nil {
-		t.Errorf("List: %v", err)
-	}
-	for _, name := range names {
-		if name == "." || name == ".." {
-			t.Errorf("expected List to exclude pseudo-entries, got %v", names)
-			break
-		}
 	}
 
 	if err := client.Delete(remoteName); err != nil {

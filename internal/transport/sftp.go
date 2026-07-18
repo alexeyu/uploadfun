@@ -221,17 +221,3 @@ func (c *SFTPClient) Size(remoteName string) (int64, error) {
 func (c *SFTPClient) Verify(localPath, remoteName string) (method string, err error) {
 	return verifyBySize(localPath, remoteName, c.Size)
 }
-
-// List returns the names of entries in the current remote directory, used
-// only for --dry-run.
-func (c *SFTPClient) List() ([]string, error) {
-	cwd, err := c.sftp.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	entries, err := c.sftp.ReadDir(cwd)
-	if err != nil {
-		return nil, err
-	}
-	return dirEntryNames(entries, os.FileInfo.Name), nil
-}

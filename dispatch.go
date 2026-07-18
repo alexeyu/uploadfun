@@ -25,8 +25,6 @@ type uploader interface {
 	// copy. method describes what was actually performed (e.g. "size",
 	// "size+hash") so callers can surface the weaker guarantee.
 	Verify(ctx context.Context, localPath, remoteName string) (method string, err error)
-	// List returns remote directory entries; used only for --dry-run.
-	List(ctx context.Context) ([]string, error)
 }
 
 func dispatch(
@@ -55,7 +53,7 @@ func runEndpoint(
 	}
 
 	if opts.DryRun {
-		runDryRun(ctx, up, ep, events)
+		runDryRun(ctx, up, ep, files, events)
 		return
 	}
 
@@ -290,10 +288,16 @@ func (w *endpointWorker) sleepBeforeRetry(attempt int) {
 	}
 }
 
-// runDryRun performs the --dry-run connectivity check for one endpoint:
-// connect, authenticate, list the remote directory, disconnect - never
-// touching files.
-func runDryRun(ctx context.Context, up uploader, ep Endpoint, events chan<- UploadEvent) {
+// runDryRun performs the --dry-run preflight for one endpoint: connect and
+// authenticate to prove the endpoint is reachable, disconnect, and report
+// how many files a real run would upload - never touching any file.
+func runDryRun(
+	ctx context.Context,
+	up uploader,
+	ep Endpoint,
+	files []string,
+	events chan<- UploadEvent,
+) {
 	connectCtx, cancel := context.WithTimeout(ctx, ep.ConnectTimeout)
 	err := up.Connect(connectCtx, ep)
 	cancel()
@@ -301,14 +305,8 @@ func runDryRun(ctx context.Context, up uploader, ep Endpoint, events chan<- Uplo
 		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
 		return
 	}
-	defer func() { _ = up.Disconnect(ctx) }()
-
-	entries, err := up.List(ctx)
-	if err != nil {
-		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
-		return
-	}
-	events <- DryRunEvent{Endpoint: ep.Name, Entries: entries}
+	_ = up.Disconnect(ctx)
+	events <- DryRunEvent{Endpoint: ep.Name, Files: len(files)}
 }
 
 func failAllFiles(ep Endpoint, files []string, err error, events chan<- UploadEvent) {

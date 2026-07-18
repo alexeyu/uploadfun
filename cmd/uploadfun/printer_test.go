@@ -242,7 +242,7 @@ func TestPrinterJSONOutput(t *testing.T) {
 
 func TestPrinterDryRunSuccess(t *testing.T) {
 	events := []uploadfun.UploadEvent{
-		uploadfun.DryRunEvent{Endpoint: "ep1", Entries: []string{"a.jpg", "b.jpg"}},
+		uploadfun.DryRunEvent{Endpoint: "ep1", Files: 2},
 	}
 	stdout, stderr, failed := runPrinterWithEvents(modeDefault, false, events)
 	if failed {
@@ -251,7 +251,7 @@ func TestPrinterDryRunSuccess(t *testing.T) {
 	if stderr != "" {
 		t.Errorf("expected no stderr output, got %q", stderr)
 	}
-	if !strings.Contains(stdout, "dry-run ok") || !strings.Contains(stdout, "2 entries") {
+	if !strings.Contains(stdout, "dry-run ok") || !strings.Contains(stdout, "would upload 2 files") {
 		t.Errorf("expected a dry-run summary on stdout, got %q", stdout)
 	}
 }
@@ -287,7 +287,7 @@ func TestPrinterDryRunFailurePrintsEvenWhenQuiet(t *testing.T) {
 
 func TestPrinterDryRunJSON(t *testing.T) {
 	events := []uploadfun.UploadEvent{
-		uploadfun.DryRunEvent{Endpoint: "ep1", Entries: []string{"a.jpg"}},
+		uploadfun.DryRunEvent{Endpoint: "ep1", Files: 3},
 	}
 	stdout, _, _ := runPrinterWithEvents(modeDefault, true, events)
 
@@ -298,8 +298,7 @@ func TestPrinterDryRunJSON(t *testing.T) {
 	if payload["type"] != "dry_run" {
 		t.Errorf("expected type=dry_run, got %v", payload["type"])
 	}
-	entries, ok := payload["entries"].([]any)
-	if !ok || len(entries) != 1 {
-		t.Errorf("expected entries=[a.jpg], got %v", payload["entries"])
+	if files, ok := payload["files"].(float64); !ok || files != 3 {
+		t.Errorf("expected files=3, got %v", payload["files"])
 	}
 }

@@ -23,7 +23,6 @@ type remoteClient interface {
 	Delete(remoteName string) error
 	Upload(remoteName string, r io.Reader, size int64, progress func(sent, total int64)) error
 	Verify(localPath, remoteName string) (method string, err error)
-	List() ([]string, error)
 }
 
 // transportUploader adapts one internal/transport client to the
@@ -70,10 +69,6 @@ func (u *transportUploader) Verify(
 	ctx context.Context, localPath, remoteName string,
 ) (string, error) {
 	return u.client.Verify(localPath, remoteName)
-}
-
-func (u *transportUploader) List(ctx context.Context) ([]string, error) {
-	return u.client.List()
 }
 
 func newRealUploader(protocol Protocol) (uploader, error) {

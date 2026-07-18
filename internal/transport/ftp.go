@@ -205,16 +205,6 @@ func (c *FTPClient) Verify(localPath, remoteName string) (method string, err err
 	return verifyBySize(localPath, remoteName, c.Size)
 }
 
-// List returns the names of entries in the current remote directory, used
-// only for --dry-run.
-func (c *FTPClient) List() ([]string, error) {
-	entries, err := c.conn.List("")
-	if err != nil {
-		return nil, err
-	}
-	return dirEntryNames(entries, func(e *ftp.Entry) string { return e.Name }), nil
-}
-
 // isNotExist reports whether err is an FTP "file unavailable" response
 // (RFC 959 code 550), the standard code servers use for DELE/RETR/etc.
 // against a path that doesn't exist.

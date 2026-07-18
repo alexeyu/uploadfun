@@ -34,10 +34,6 @@ type fakeUploader struct {
 
 	disconnectCalls int
 
-	listResult []string
-	listErr    error
-	listCalls  int
-
 	// beforeUpload, if set, runs at the start of each Upload with the
 	// 1-based call number - a hook for tests to cancel mid-transfer.
 	beforeUpload func(call int)
@@ -105,13 +101,6 @@ func (f *fakeUploader) Verify(ctx context.Context, localPath, remoteName string)
 		method = "size"
 	}
 	return method, nil
-}
-
-func (f *fakeUploader) List(ctx context.Context) ([]string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.listCalls++
-	return f.listResult, f.listErr
 }
 
 // withFakeUploader registers f as the transport for every protocol for
@@ -652,11 +641,12 @@ func TestDispatchCancelDuringRetryEmitsNoSpuriousErrors(t *testing.T) {
 }
 
 func TestDispatchDryRunSuccess(t *testing.T) {
-	f := &fakeUploader{listResult: []string{"existing1.jpg", "existing2.jpg"}}
+	f := &fakeUploader{}
 	withFakeUploader(t, f)
 
+	files := []string{"a.jpg", "b.jpg", "c.jpg"}
 	events := collectEvents(Upload(
-		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
+		context.Background(), files, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
 	))
 
 	if len(events) != 1 {
@@ -669,16 +659,13 @@ func TestDispatchDryRunSuccess(t *testing.T) {
 	if dr.Err != nil {
 		t.Errorf("expected no error, got %v", dr.Err)
 	}
-	if len(dr.Entries) != 2 {
-		t.Errorf("expected 2 entries, got %v", dr.Entries)
+	if dr.Files != len(files) {
+		t.Errorf("expected Files to report %d planned uploads, got %d", len(files), dr.Files)
 	}
 
 	if f.uploadCalls != 0 || f.deleteCalls != 0 {
 		t.Errorf("expected no upload/delete calls during a dry run, got uploadCalls=%d deleteCalls=%d",
 			f.uploadCalls, f.deleteCalls)
-	}
-	if f.listCalls != 1 {
-		t.Errorf("expected exactly 1 List call, got %d", f.listCalls)
 	}
 	if f.disconnectCalls != 1 {
 		t.Errorf("expected exactly 1 disconnect, got %d", f.disconnectCalls)
@@ -703,27 +690,7 @@ func TestDispatchDryRunConnectFailure(t *testing.T) {
 	if dr.Err == nil {
 		t.Error("expected a connect error")
 	}
-	if f.listCalls != 0 {
-		t.Errorf("expected List not to be called after a connect failure, got %d calls", f.listCalls)
-	}
-}
-
-func TestDispatchDryRunListFailure(t *testing.T) {
-	f := &fakeUploader{listErr: errors.New("list failed")}
-	withFakeUploader(t, f)
-
-	events := collectEvents(Upload(
-		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
-	))
-
-	dr, ok := events[0].(DryRunEvent)
-	if !ok {
-		t.Fatalf("expected a DryRunEvent, got %T", events[0])
-	}
-	if dr.Err == nil {
-		t.Error("expected a list error")
-	}
-	if f.disconnectCalls != 1 {
-		t.Errorf("expected disconnect even after a list failure, got %d", f.disconnectCalls)
+	if f.disconnectCalls != 0 {
+		t.Errorf("expected no disconnect after a connect failure, got %d", f.disconnectCalls)
 	}
 }

@@ -77,8 +77,9 @@ type Options struct {
 	// NoVerify disables the post-upload size/hash verification that's on
 	// by default.
 	NoVerify bool
-	// DryRun connects, authenticates, and lists the remote directory per
-	// endpoint, without transferring, deleting, or writing anything.
+	// DryRun connects and authenticates per endpoint and reports how many
+	// files a real run would upload, without transferring, deleting, or
+	// writing anything.
 	DryRun bool
 }
 
@@ -174,14 +175,18 @@ type EndpointDoneEvent struct {
 
 func (EndpointDoneEvent) uploadEvent() {}
 
-// DryRunEvent reports the outcome of a --dry-run connectivity check:
-// connect, authenticate, list the remote directory. Exactly one is sent
-// per endpoint when Options.DryRun is set, replacing the per-file events.
+// DryRunEvent reports the outcome of a --dry-run preflight for one
+// endpoint: connect and authenticate to prove it's reachable, then report
+// how many files a real run would upload, without transferring anything.
+// Exactly one is sent per endpoint when Options.DryRun is set, replacing
+// the per-file events.
 type DryRunEvent struct {
-	Endpoint string   `json:"endpoint"`
-	Entries  []string `json:"entries,omitempty"`
-	// Err is set if connecting, authenticating, or listing failed; nil
-	// means Entries reflects a successful listing.
+	Endpoint string `json:"endpoint"`
+	// Files is how many files a real run would upload to this endpoint;
+	// meaningful only when Err is nil.
+	Files int `json:"files"`
+	// Err is set if connecting or authenticating failed; nil means the
+	// endpoint is reachable and Files reflects the planned upload.
 	Err error `json:"-"`
 }
 

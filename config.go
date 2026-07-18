@@ -18,14 +18,15 @@ type rawConfig struct {
 }
 
 type rawEndpoint struct {
-	Name       string `yaml:"name"`
-	Protocol   string `yaml:"protocol"`
-	Host       string `yaml:"host"`
-	Port       int    `yaml:"port"`
-	Username   string `yaml:"username"`
-	Password   string `yaml:"password"`
-	PrivateKey string `yaml:"private_key"`
-	Overwrite  string `yaml:"overwrite"`
+	Name               string `yaml:"name"`
+	Protocol           string `yaml:"protocol"`
+	Host               string `yaml:"host"`
+	Port               int    `yaml:"port"`
+	Username           string `yaml:"username"`
+	Password           string `yaml:"password"`
+	PrivateKey         string `yaml:"private_key"`
+	Overwrite          string `yaml:"overwrite"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 
 	rawPolicy `yaml:",inline"`
 }
@@ -160,6 +161,10 @@ func buildEndpoint(
 		errs = append(errs, fmt.Errorf("%s: username is required", label))
 	}
 	errs = append(errs, validateAuth(label, protocol, f.password, f.privateKey)...)
+	if re.InsecureSkipVerify && protocol != ProtocolFTPS {
+		errs = append(errs, fmt.Errorf(
+			"%s: insecure_skip_verify is only supported for protocol %q", label, ProtocolFTPS))
+	}
 
 	overwrite, overwriteErrs := resolveOverwrite(label, f.overwriteRaw)
 	errs = append(errs, overwriteErrs...)
@@ -181,6 +186,7 @@ func buildEndpoint(
 		Password:                      f.password,
 		PrivateKey:                    privateKey,
 		Overwrite:                     overwrite,
+		InsecureSkipVerify:            re.InsecureSkipVerify,
 		Attempts:                      policy.attempts,
 		RetryDelay:                    policy.retryDelay,
 		ConnectTimeout:                policy.connectTimeout,

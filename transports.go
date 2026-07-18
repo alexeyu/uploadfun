@@ -2,6 +2,7 @@ package uploadfun
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"os"
@@ -100,6 +101,10 @@ func dialFTPClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
 }
 
 func dialFTPSClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
+	var tlsConfig *tls.Config
+	if ep.InsecureSkipVerify {
+		tlsConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 	return transport.DialFTPS(ctx, transport.FTPSDialOptions{
 		Host:           ep.Host,
 		Port:           ep.Port,
@@ -107,6 +112,7 @@ func dialFTPSClient(ctx context.Context, ep Endpoint) (remoteClient, error) {
 		Password:       ep.Password,
 		ConnectTimeout: ep.ConnectTimeout,
 		StallTimeout:   ep.StallTimeout,
+		TLSConfig:      tlsConfig,
 	})
 }
 

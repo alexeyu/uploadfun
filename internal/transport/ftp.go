@@ -142,9 +142,15 @@ func ftpDialAndLogin(addr string, cfg dialConfig, d *ftpDialer) (*ftp.ServerConn
 	return conn, nil
 }
 
-// resolveTLSConfig fills in ServerName and ClientSessionCache when
-// missing, on a clone so the caller's config isn't mutated - servers
-// enforcing data-connection TLS resumption (e.g. pure-ftpd) need both set.
+// resolveTLSConfig fills in ServerName, ClientSessionCache, and MaxVersion
+// when missing, on a clone so the caller's config isn't mutated - servers
+// enforcing data-connection TLS resumption (e.g. pure-ftpd) need the first
+// two set. MaxVersion is capped at 1.2 because FTP's data connection is
+// one-directional (STOR only writes, RETR only reads), so a TLS 1.3
+// server's unprompted post-handshake NewSessionTicket messages are never
+// drained; closing the socket with that unread data still in the kernel
+// buffer sends a TCP RST instead of a clean FIN - vsftpd (and others)
+// then reports "426 Failure reading network stream."
 func resolveTLSConfig(host string, cfg *tls.Config) *tls.Config {
 	resolved := &tls.Config{}
 	if cfg != nil {
@@ -155,6 +161,9 @@ func resolveTLSConfig(host string, cfg *tls.Config) *tls.Config {
 	}
 	if resolved.ClientSessionCache == nil {
 		resolved.ClientSessionCache = tls.NewLRUClientSessionCache(4)
+	}
+	if resolved.MaxVersion == 0 {
+		resolved.MaxVersion = tls.VersionTLS12
 	}
 	return resolved
 }

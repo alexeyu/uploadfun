@@ -55,6 +55,10 @@ type Endpoint struct {
 	// protocol as an alternative to Password.
 	PrivateKey string
 	Overwrite  OverwriteMode
+	// InsecureSkipVerify disables TLS certificate verification for the
+	// ftps protocol. Only for self-signed/test servers - it accepts any
+	// certificate, so never enable it against a production endpoint.
+	InsecureSkipVerify bool
 
 	Attempts       int
 	RetryDelay     time.Duration

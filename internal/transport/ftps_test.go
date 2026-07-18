@@ -54,4 +54,19 @@ func TestResolveTLSConfig(t *testing.T) {
 			t.Error("expected an explicit ClientSessionCache to be preserved, not replaced")
 		}
 	})
+
+	t.Run("nil config caps MaxVersion at TLS 1.2", func(t *testing.T) {
+		cfg := resolveTLSConfig("ftp.example.com", nil)
+		if cfg.MaxVersion != tls.VersionTLS12 {
+			t.Errorf("expected MaxVersion capped at TLS 1.2, got %v", cfg.MaxVersion)
+		}
+	})
+
+	t.Run("explicit MaxVersion preserved", func(t *testing.T) {
+		explicit := &tls.Config{MaxVersion: tls.VersionTLS13}
+		cfg := resolveTLSConfig("ftp.example.com", explicit)
+		if cfg.MaxVersion != tls.VersionTLS13 {
+			t.Errorf("expected explicit MaxVersion to be preserved, got %v", cfg.MaxVersion)
+		}
+	})
 }

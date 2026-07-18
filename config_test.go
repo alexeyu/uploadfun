@@ -273,6 +273,42 @@ endpoints:
 	}
 }
 
+func TestLoadConfigInsecureSkipVerify(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftps
+    host: ftp.example.com
+    username: u
+    password: p
+    insecure_skip_verify: true
+`)
+	endpoints, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !endpoints[0].InsecureSkipVerify {
+		t.Error("expected InsecureSkipVerify to be true")
+	}
+}
+
+func TestLoadConfigInsecureSkipVerifyRejectedForNonFTPS(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    username: u
+    password: p
+    insecure_skip_verify: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil ||
+		!strings.Contains(err.Error(), "insecure_skip_verify is only supported for protocol \"ftps\"") {
+		t.Fatalf("expected insecure_skip_verify rejection error, got %v", err)
+	}
+}
+
 func TestLoadConfigNoEndpoints(t *testing.T) {
 	path := writeConfig(t, `attempts: 3`)
 	_, err := LoadConfig(path)

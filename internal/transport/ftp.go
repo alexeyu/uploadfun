@@ -216,21 +216,3 @@ func isNotExist(err error) bool {
 	}
 	return false
 }
-
-type progressReader struct {
-	r          io.Reader
-	sent       int64
-	total      int64
-	onProgress func(sent, total int64)
-}
-
-func (p *progressReader) Read(buf []byte) (int, error) {
-	n, err := p.r.Read(buf)
-	if n > 0 {
-		p.sent += int64(n)
-		if p.onProgress != nil {
-			p.onProgress(p.sent, p.total)
-		}
-	}
-	return n, err
-}

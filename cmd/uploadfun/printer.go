@@ -62,13 +62,11 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			p.write(p.stdout, e, msg)
 		}
 	case uploadfun.FileSuccessEvent:
-		if p.mode != modeQuiet {
-			msg := fmt.Sprintf("[%s] %s: uploaded", e.Endpoint, e.File)
-			if e.VerifyMethod != "" {
-				msg += fmt.Sprintf(" (verified: %s)", e.VerifyMethod)
-			}
-			p.write(p.stdout, e, msg)
+		msg := fmt.Sprintf("[%s] %s: uploaded", e.Endpoint, e.File)
+		if e.VerifyMethod != "" {
+			msg += fmt.Sprintf(" (verified: %s)", e.VerifyMethod)
 		}
+		p.writeUnlessQuiet(e, msg)
 	case uploadfun.FileErrorEvent:
 		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)
 		p.write(p.stderr, e, msg)
@@ -79,19 +77,21 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		)
 		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointDoneEvent:
-		if p.mode != modeQuiet {
-			msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
-			p.write(p.stdout, e, msg)
-		}
+		msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
+		p.writeUnlessQuiet(e, msg)
 	case uploadfun.DryRunEvent:
 		if e.Err != nil {
 			p.write(p.stderr, e, fmt.Sprintf("[%s] dry-run failed: %s", e.Endpoint, e.Err))
 			return
 		}
-		if p.mode != modeQuiet {
-			msg := fmt.Sprintf("[%s] dry-run ok: %d entries in remote directory", e.Endpoint, len(e.Entries))
-			p.write(p.stdout, e, msg)
-		}
+		msg := fmt.Sprintf("[%s] dry-run ok: %d entries in remote directory", e.Endpoint, len(e.Entries))
+		p.writeUnlessQuiet(e, msg)
+	}
+}
+
+func (p *printer) writeUnlessQuiet(ev uploadfun.UploadEvent, msg string) {
+	if p.mode != modeQuiet {
+		p.write(p.stdout, ev, msg)
 	}
 }
 
@@ -103,47 +103,44 @@ func (p *printer) write(w io.Writer, ev uploadfun.UploadEvent, text string) {
 	_, _ = fmt.Fprintln(w, text)
 }
 
-// jsonPayload adds a "type" discriminator field so newline-delimited
-// JSON consumers can tell the four event kinds apart without relying on
-// which fields happen to be present.
-func jsonPayload(ev uploadfun.UploadEvent) any {
-	switch e := ev.(type) {
+// eventTypeName returns the "type" discriminator jsonPayload injects,
+// so JSON consumers can tell events apart without relying on which
+// fields happen to be present.
+func eventTypeName(ev uploadfun.UploadEvent) string {
+	switch ev.(type) {
 	case uploadfun.ProgressEvent:
-		return struct {
-			Type string `json:"type"`
-			uploadfun.ProgressEvent
-		}{"progress", e}
+		return "progress"
 	case uploadfun.FileSuccessEvent:
-		return struct {
-			Type string `json:"type"`
-			uploadfun.FileSuccessEvent
-		}{"file_success", e}
+		return "file_success"
 	case uploadfun.FileErrorEvent:
-		return struct {
-			Type string `json:"type"`
-			uploadfun.FileErrorEvent
-		}{"file_error", e}
+		return "file_error"
 	case uploadfun.EndpointUnreachableEvent:
-		return struct {
-			Type string `json:"type"`
-			uploadfun.EndpointUnreachableEvent
-		}{"endpoint_unreachable", e}
+		return "endpoint_unreachable"
 	case uploadfun.EndpointDoneEvent:
-		return struct {
-			Type string `json:"type"`
-			uploadfun.EndpointDoneEvent
-		}{"endpoint_done", e}
+		return "endpoint_done"
 	case uploadfun.DryRunEvent:
-		errText := ""
-		if e.Err != nil {
-			errText = e.Err.Error()
-		}
-		return struct {
-			Type string `json:"type"`
-			uploadfun.DryRunEvent
-			Error string `json:"error,omitempty"`
-		}{"dry_run", e, errText}
+		return "dry_run"
 	default:
+		return ""
+	}
+}
+
+func jsonPayload(ev uploadfun.UploadEvent) any {
+	typ := eventTypeName(ev)
+	if typ == "" {
 		return nil
 	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil
+	}
+	payload["type"] = typ
+	if e, ok := ev.(uploadfun.DryRunEvent); ok && e.Err != nil {
+		payload["error"] = e.Err.Error()
+	}
+	return payload
 }

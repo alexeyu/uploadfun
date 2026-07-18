@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sync/atomic"
@@ -103,4 +104,24 @@ func (c *guardedConn) arm(setDeadline func(time.Time) error) {
 		return
 	}
 	_ = setDeadline(time.Now().Add(c.guard.stallTimeout))
+}
+
+// progressReader wraps r to report cumulative bytes read via onProgress,
+// shared by FTP's Stor and SFTP's io.Copy upload paths.
+type progressReader struct {
+	r          io.Reader
+	sent       int64
+	total      int64
+	onProgress func(sent, total int64)
+}
+
+func (p *progressReader) Read(buf []byte) (int, error) {
+	n, err := p.r.Read(buf)
+	if n > 0 {
+		p.sent += int64(n)
+		if p.onProgress != nil {
+			p.onProgress(p.sent, p.total)
+		}
+	}
+	return n, err
 }

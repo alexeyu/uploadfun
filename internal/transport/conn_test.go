@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"testing"
@@ -65,5 +66,46 @@ func TestGuardedConnZeroTimeoutDisabled(t *testing.T) {
 	if len(rec.readDeadlines) != 0 || len(rec.writeDeadlines) != 0 {
 		t.Errorf("expected no deadlines when stallTimeout is 0, got read=%v write=%v",
 			rec.readDeadlines, rec.writeDeadlines)
+	}
+}
+
+func TestProgressReader(t *testing.T) {
+	data := []byte("hello world, this is some test data")
+	var calls [][2]int64
+	pr := &progressReader{
+		r:     bytes.NewReader(data),
+		total: int64(len(data)),
+		onProgress: func(sent, total int64) {
+			calls = append(calls, [2]int64{sent, total})
+		},
+	}
+
+	got, err := io.ReadAll(pr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("expected read data to match source, got %q", got)
+	}
+	if len(calls) == 0 {
+		t.Fatal("expected at least one progress callback")
+	}
+	last := calls[len(calls)-1]
+	if last[0] != int64(len(data)) || last[1] != int64(len(data)) {
+		t.Errorf("expected final progress call to report full size, got sent=%d total=%d",
+			last[0], last[1])
+	}
+	for i := 1; i < len(calls); i++ {
+		if calls[i][0] <= calls[i-1][0] {
+			t.Errorf("expected cumulative sent bytes to increase monotonically, got %v", calls)
+			break
+		}
+	}
+}
+
+func TestProgressReaderNilCallback(t *testing.T) {
+	pr := &progressReader{r: bytes.NewReader([]byte("data")), total: 4}
+	if _, err := io.ReadAll(pr); err != nil {
+		t.Fatalf("unexpected error with nil onProgress: %v", err)
 	}
 }

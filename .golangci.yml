@@ -11,3 +11,9 @@ formatters:
   enable:
     - gofmt
     - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 100
+      tab-len: 1
+      reformat-tags: false

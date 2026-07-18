@@ -81,6 +81,14 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		// failure.
 		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)
 		p.write(p.stderr, e, msg)
+	case uploadfun.EndpointUnreachableEvent:
+		// Always prints, even in --quiet, same as FileErrorEvent - one
+		// line covers every skipped file rather than repeating per file.
+		msg := fmt.Sprintf(
+			"[%s] endpoint unreachable after %d consecutive connect failures: skipping %d remaining file(s)",
+			e.Endpoint, e.ConsecutiveFailures, len(e.SkippedFiles),
+		)
+		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointDoneEvent:
 		if p.mode != modeQuiet {
 			msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
@@ -127,6 +135,11 @@ func jsonPayload(ev uploadfun.UploadEvent) any {
 			Type string `json:"type"`
 			uploadfun.FileErrorEvent
 		}{"file_error", e}
+	case uploadfun.EndpointUnreachableEvent:
+		return struct {
+			Type string `json:"type"`
+			uploadfun.EndpointUnreachableEvent
+		}{"endpoint_unreachable", e}
 	case uploadfun.EndpointDoneEvent:
 		return struct {
 			Type string `json:"type"`

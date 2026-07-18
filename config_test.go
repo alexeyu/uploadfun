@@ -65,6 +65,10 @@ stall_timeout: 5m
 		t.Errorf("expected global defaults applied, got attempts=%d retry_delay=%v",
 			shutterstock.Attempts, shutterstock.RetryDelay)
 	}
+	if shutterstock.MaxConsecutiveConnectFailures != DefaultMaxConsecutiveConnectFailures {
+		t.Errorf("expected built-in default max_consecutive_connect_failures=%d, got %d",
+			DefaultMaxConsecutiveConnectFailures, shutterstock.MaxConsecutiveConnectFailures)
+	}
 
 	dreamstime := endpoints[1]
 	home, _ := os.UserHomeDir()
@@ -95,6 +99,49 @@ retry_delay: 2s
 	}
 	if endpoints[0].RetryDelay != 500*time.Millisecond {
 		t.Errorf("expected per-endpoint override retry_delay=500ms, got %v", endpoints[0].RetryDelay)
+	}
+}
+
+func TestLoadConfigMaxConsecutiveConnectFailuresIndependentOfAttempts(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    username: u
+    password: p
+    attempts: 10
+    max_consecutive_connect_failures: 5
+`)
+	endpoints, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if endpoints[0].Attempts != 10 {
+		t.Errorf("expected attempts=10, got %d", endpoints[0].Attempts)
+	}
+	// The point of this field being independent: a generous per-file
+	// retry budget doesn't have to imply an equally generous tolerance
+	// for consecutive connect failures across the batch.
+	if endpoints[0].MaxConsecutiveConnectFailures != 5 {
+		t.Errorf("expected max_consecutive_connect_failures=5, got %d",
+			endpoints[0].MaxConsecutiveConnectFailures)
+	}
+}
+
+func TestLoadConfigRejectsBadMaxConsecutiveConnectFailures(t *testing.T) {
+	path := writeConfig(t, `
+endpoints:
+  - name: a
+    protocol: ftp
+    host: ftp.example.com
+    username: u
+    password: p
+max_consecutive_connect_failures: 0
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "max_consecutive_connect_failures: must be >= 1") {
+		t.Fatalf("expected max_consecutive_connect_failures validation error, got %v", err)
 	}
 }
 

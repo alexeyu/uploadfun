@@ -12,6 +12,12 @@ const (
 	DefaultRetryDelay     = 2 * time.Second
 	DefaultConnectTimeout = 30 * time.Second
 	DefaultStallTimeout   = 5 * time.Minute
+	// DefaultMaxConsecutiveConnectFailures is a floor, not a multiple of
+	// Attempts: even an endpoint configured with Attempts: 1 (no per-file
+	// retries) gets a few tries across the batch before being written off
+	// as unreachable, rather than abandoning the rest of the files after
+	// a single connect blip.
+	DefaultMaxConsecutiveConnectFailures = 3
 )
 
 // Protocol identifies which transport an Endpoint uses.
@@ -59,6 +65,13 @@ type Endpoint struct {
 	// StallTimeout bounds how long a transfer may go without forward
 	// progress; zero disables idle-stall protection.
 	StallTimeout time.Duration
+	// MaxConsecutiveConnectFailures bounds how many connect failures in a
+	// row this endpoint tolerates across the whole batch before the rest
+	// of the files are skipped as unreachable, rather than each getting
+	// its own fresh Attempts budget. Independent of Attempts: it's a
+	// signal about the endpoint's overall reachability, not a per-file
+	// retry count.
+	MaxConsecutiveConnectFailures int
 }
 
 // Options controls behavior of Upload that isn't per-endpoint config.
@@ -73,7 +86,8 @@ type Options struct {
 
 // UploadEvent is the vocabulary of events sent on the channel returned by
 // Upload. Consumers type-switch on it to distinguish ProgressEvent,
-// FileSuccessEvent, FileErrorEvent, and EndpointDoneEvent.
+// FileSuccessEvent, FileErrorEvent, EndpointUnreachableEvent, and
+// EndpointDoneEvent.
 type UploadEvent interface {
 	uploadEvent()
 }
@@ -119,6 +133,19 @@ type FileErrorEvent struct {
 }
 
 func (FileErrorEvent) uploadEvent() {}
+
+// EndpointUnreachableEvent reports that, after ConsecutiveFailures connect
+// failures in a row (see Endpoint.MaxConsecutiveConnectFailures), one
+// endpoint's worker gave up on the rest of the batch without individually
+// attempting to connect for each of SkippedFiles - a single event covering
+// every skipped file, rather than a FileErrorEvent per file.
+type EndpointUnreachableEvent struct {
+	Endpoint            string   `json:"endpoint"`
+	ConsecutiveFailures int      `json:"consecutiveFailures"`
+	SkippedFiles        []string `json:"skippedFiles"`
+}
+
+func (EndpointUnreachableEvent) uploadEvent() {}
 
 // EndpointDoneEvent reports that one endpoint's worker has finished
 // (uploaded or given up on) every file and disconnected.

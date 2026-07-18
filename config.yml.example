@@ -33,3 +33,4 @@ attempts: 3          # total tries per file
 retry_delay: 2s
 connect_timeout: 30s
 stall_timeout: 5m
+max_consecutive_connect_failures: 5   # give up on the rest of the batch after this many connect failures in a row

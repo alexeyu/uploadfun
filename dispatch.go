@@ -75,6 +75,14 @@ type endpointWorker struct {
 	up     Uploader
 
 	connected bool
+	// consecutiveConnectFailures counts connect failures since the last
+	// successful connect. Unlike the per-file attempt loop, it persists
+	// across files: once it reaches ep.MaxConsecutiveConnectFailures,
+	// circuitOpen trips and the rest of the batch is skipped without
+	// dialing again, rather than giving every remaining file its own fresh
+	// Attempts budget against a server that has already demonstrated it
+	// isn't answering.
+	consecutiveConnectFailures int
 }
 
 // run uploads every file in order, tallies the outcome, and emits the
@@ -88,6 +96,10 @@ func (w *endpointWorker) run(files []string) {
 			failed += len(files) - i
 			break
 		}
+		if w.circuitOpen() {
+			failed += w.skipRemaining(files[i:])
+			break
+		}
 		if w.uploadFile(file) {
 			succeeded++
 		} else {
@@ -96,6 +108,32 @@ func (w *endpointWorker) run(files []string) {
 	}
 
 	w.events <- EndpointDoneEvent{Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed}
+}
+
+// circuitOpen reports whether the endpoint has racked up enough consecutive
+// connect failures (MaxConsecutiveConnectFailures) to be treated as
+// unreachable for the rest of the batch. This is deliberately independent
+// of Attempts - a generous per-file retry budget shouldn't force every
+// remaining file to also get its own full retry budget against a dead
+// server - so uploadFile checks it too and can bail out of a single file's
+// attempt loop early, not just between files.
+func (w *endpointWorker) circuitOpen() bool {
+	return w.consecutiveConnectFailures >= w.ep.MaxConsecutiveConnectFailures
+}
+
+// skipRemaining marks every file in files as failed without attempting to
+// connect, once circuitOpen has tripped, reporting them all in a single
+// EndpointUnreachableEvent rather than one FileErrorEvent apiece - with a
+// large batch, a repeated per-file message adds noise without adding
+// information once the endpoint has already been declared unreachable.
+// Returns len(files) for the caller's failed tally.
+func (w *endpointWorker) skipRemaining(files []string) int {
+	w.events <- EndpointUnreachableEvent{
+		Endpoint:            w.ep.Name,
+		ConsecutiveFailures: w.consecutiveConnectFailures,
+		SkippedFiles:        files,
+	}
+	return len(files)
 }
 
 // uploadFile uploads one file, retrying up to the endpoint's Attempts
@@ -112,6 +150,10 @@ func (w *endpointWorker) uploadFile(file string) bool {
 			case connectCanceled:
 				return false
 			case connectFailed:
+				if w.circuitOpen() {
+					w.reportGivingUp(file, attempt)
+					return false
+				}
 				w.sleepBeforeRetry(attempt)
 				continue
 			}
@@ -153,14 +195,30 @@ func (w *endpointWorker) connect(file string, attempt int) connectResult {
 		if w.ctx.Err() != nil {
 			return connectCanceled
 		}
+		w.consecutiveConnectFailures++
 		w.events <- FileErrorEvent{
 			Endpoint: w.ep.Name, File: file, Attempt: attempt,
 			Reason: "connect: " + err.Error(), Err: err,
 		}
 		return connectFailed
 	}
+	w.consecutiveConnectFailures = 0
 	w.connected = true
 	return connectOK
+}
+
+// reportGivingUp explains why a file's own attempt loop stopped short of
+// its Attempts budget: the circuit breaker tripped mid-file (only possible
+// when MaxConsecutiveConnectFailures < Attempts). Without this, seeing
+// fewer attempts than configured would look unexplained.
+func (w *endpointWorker) reportGivingUp(file string, attempt int) {
+	err := fmt.Errorf(
+		"endpoint unreachable: %d consecutive connect failures, giving up on this file",
+		w.consecutiveConnectFailures,
+	)
+	w.events <- FileErrorEvent{
+		Endpoint: w.ep.Name, File: file, Attempt: attempt, Reason: err.Error(), Err: err,
+	}
 }
 
 // transfer runs the delete/upload/verify sequence for one file on the

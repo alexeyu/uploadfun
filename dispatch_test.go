@@ -119,16 +119,17 @@ func withFakeUploader(t *testing.T, f *fakeUploader) {
 
 func testEndpoint(name string) Endpoint {
 	return Endpoint{
-		Name:           name,
-		Protocol:       ProtocolFTP,
-		Host:           "ftp.example.com",
-		Username:       "u",
-		Password:       "p",
-		Overwrite:      OverwriteDeleteFirst,
-		Attempts:       3,
-		RetryDelay:     time.Millisecond,
-		ConnectTimeout: time.Second,
-		StallTimeout:   time.Second,
+		Name:                          name,
+		Protocol:                      ProtocolFTP,
+		Host:                          "ftp.example.com",
+		Username:                      "u",
+		Password:                      "p",
+		Overwrite:                     OverwriteDeleteFirst,
+		Attempts:                      3,
+		RetryDelay:                    time.Millisecond,
+		ConnectTimeout:                time.Second,
+		StallTimeout:                  time.Second,
+		MaxConsecutiveConnectFailures: 3,
 	}
 }
 
@@ -150,6 +151,8 @@ func countByType(events []UploadEvent) map[string]int {
 			counts["success"]++
 		case FileErrorEvent:
 			counts["error"]++
+		case EndpointUnreachableEvent:
+			counts["unreachable"]++
 		case EndpointDoneEvent:
 			counts["done"]++
 		}
@@ -352,6 +355,165 @@ func TestDispatchConnectFailureReasonIncludesCause(t *testing.T) {
 	}
 	if errEvent.Reason != "connect: simulated connect failure" {
 		t.Errorf("expected the connect error's cause in Reason, got %q", errEvent.Reason)
+	}
+}
+
+func TestDispatchCircuitBreakerSkipsRemainingFilesAfterConnectFailures(t *testing.T) {
+	f := &fakeUploader{failConnectN: 999}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 3
+	ep.MaxConsecutiveConnectFailures = 3
+	files := []string{"a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"}
+	events := collectEvents(Upload(context.Background(), files, []Endpoint{ep}, Options{}))
+
+	if f.connectCalls != ep.MaxConsecutiveConnectFailures {
+		t.Errorf("expected the circuit breaker to stop dialing after %d consecutive failures, "+
+			"got %d connect calls", ep.MaxConsecutiveConnectFailures, f.connectCalls)
+	}
+
+	counts := countByType(events)
+	// 3 genuine connect-failure events for the first file, plus 1 more
+	// explaining why it gave up before exhausting Attempts... except here
+	// MaxConsecutiveConnectFailures == Attempts, so the trip coincides
+	// with the file's own last attempt.
+	wantFileErrors := ep.MaxConsecutiveConnectFailures + 1
+	if counts["error"] != wantFileErrors {
+		t.Errorf("expected %d error events, got %d", wantFileErrors, counts["error"])
+	}
+	// Every other remaining file is bundled into a single event, never
+	// dialed - not one FileErrorEvent apiece.
+	if counts["unreachable"] != 1 {
+		t.Errorf("expected exactly 1 unreachable event (not one per skipped file), got %d",
+			counts["unreachable"])
+	}
+	for _, e := range events {
+		if ue, ok := e.(EndpointUnreachableEvent); ok && len(ue.SkippedFiles) != len(files)-1 {
+			t.Errorf("expected %d skipped files bundled together, got %v", len(files)-1, ue.SkippedFiles)
+		}
+	}
+
+	var done EndpointDoneEvent
+	for _, e := range events {
+		if d, ok := e.(EndpointDoneEvent); ok {
+			done = d
+		}
+	}
+	if done.Succeeded != 0 || done.Failed != len(files) {
+		t.Errorf("expected EndpointDoneEvent{Succeeded:0,Failed:%d}, got %+v", len(files), done)
+	}
+}
+
+func TestDispatchCircuitBreakerTripsMidFileWhenLowerThanAttempts(t *testing.T) {
+	// Attempts (10) is deliberately much larger than
+	// MaxConsecutiveConnectFailures (3): the very first file should stop
+	// retrying once the breaker trips, rather than burning its whole
+	// 10-attempt budget against a server that already isn't answering.
+	f := &fakeUploader{failConnectN: 999}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 10
+	ep.MaxConsecutiveConnectFailures = 3
+	events := collectEvents(Upload(context.Background(), []string{"a.jpg"}, []Endpoint{ep}, Options{}))
+
+	if f.connectCalls != ep.MaxConsecutiveConnectFailures {
+		t.Errorf("expected dialing to stop at %d connect calls (the breaker threshold), got %d",
+			ep.MaxConsecutiveConnectFailures, f.connectCalls)
+	}
+
+	counts := countByType(events)
+	// The 3 real connect-failure events, plus 1 explaining why the file
+	// stopped short of its 10-attempt budget.
+	wantFileErrors := ep.MaxConsecutiveConnectFailures + 1
+	if counts["error"] != wantFileErrors {
+		t.Errorf("expected %d error events, got %d", wantFileErrors, counts["error"])
+	}
+}
+
+// TestDispatchCircuitBreakerTripMidFileIsExplainedAndRestBundled is a
+// regression test for a reported bug: with attempts=3 (default) and
+// max_consecutive_connect_failures=5, the breaker tripped partway through
+// file2's own retry loop (attempt 2 of 3) rather than at a file boundary.
+// The observed bug had two parts: file2 got no explanation for stopping
+// early, and files 3-4 each got their own "endpoint unreachable" message
+// carrying a nonsensical Attempt value (the global failure count, 5,
+// rather than anything meaningful for a file that was never dialed).
+func TestDispatchCircuitBreakerTripMidFileIsExplainedAndRestBundled(t *testing.T) {
+	f := &fakeUploader{failConnectN: 999}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 3
+	ep.MaxConsecutiveConnectFailures = 5
+	files := []string{"f1.txt", "f2.txt", "f3.txt", "f4.txt"}
+	events := collectEvents(Upload(context.Background(), files, []Endpoint{ep}, Options{}))
+
+	// file1 uses its full 3-attempt budget; file2 stops after 2 attempts
+	// (3+2=5, tripping the breaker).
+	if f.connectCalls != 5 {
+		t.Errorf("expected 5 connect calls (3 for file1, 2 for file2), got %d", f.connectCalls)
+	}
+
+	var file2GaveUp *FileErrorEvent
+	var unreachable *EndpointUnreachableEvent
+	for _, e := range events {
+		switch ev := e.(type) {
+		case FileErrorEvent:
+			if ev.File == "f2.txt" && strings.Contains(ev.Reason, "giving up on this file") {
+				file2GaveUp = &ev
+			}
+		case EndpointUnreachableEvent:
+			unreachable = &ev
+		}
+	}
+
+	if file2GaveUp == nil {
+		t.Fatal("expected a FileErrorEvent explaining why file2 was abandoned mid-retry")
+	}
+	if file2GaveUp.Attempt != 2 {
+		t.Errorf("expected the give-up message to reference file2's actual last attempt (2), got %d",
+			file2GaveUp.Attempt)
+	}
+
+	if unreachable == nil {
+		t.Fatal("expected a single EndpointUnreachableEvent bundling the never-attempted files")
+	}
+	if len(unreachable.SkippedFiles) != 2 ||
+		unreachable.SkippedFiles[0] != "f3.txt" || unreachable.SkippedFiles[1] != "f4.txt" {
+		t.Errorf("expected f3.txt and f4.txt bundled together, got %v", unreachable.SkippedFiles)
+	}
+
+	counts := countByType(events)
+	if counts["unreachable"] != 1 {
+		t.Errorf("expected exactly 1 unreachable event, not one per skipped file, got %d",
+			counts["unreachable"])
+	}
+}
+
+func TestDispatchCircuitBreakerResetsAfterSuccessfulConnect(t *testing.T) {
+	// Only the very first connect call fails; every later one (including
+	// the reconnects for files b and c) succeeds, so the streak should
+	// reset to zero and every file after the first should be attempted
+	// normally rather than skipped.
+	f := &fakeUploader{failConnectN: 1, failUploadN: 1}
+	withFakeUploader(t, f)
+
+	ep := testEndpoint("ep1")
+	ep.Attempts = 3
+	files := []string{"a.jpg", "b.jpg", "c.jpg"}
+	events := collectEvents(Upload(context.Background(), files, []Endpoint{ep}, Options{}))
+
+	counts := countByType(events)
+	if counts["success"] != len(files) {
+		t.Errorf("expected all %d files to eventually succeed, got %d (%+v)",
+			len(files), counts["success"], events)
+	}
+	for _, e := range events {
+		if fe, ok := e.(FileErrorEvent); ok && strings.Contains(fe.Reason, "endpoint unreachable") {
+			t.Errorf("did not expect the circuit breaker to trip, got %+v", fe)
+		}
 	}
 }
 

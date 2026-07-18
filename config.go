@@ -35,10 +35,11 @@ type rawEndpoint struct {
 // endpoint (as overrides). Pointers distinguish "unset" from an explicit
 // zero.
 type rawPolicy struct {
-	Attempts       *int    `yaml:"attempts"`
-	RetryDelay     *string `yaml:"retry_delay"`
-	ConnectTimeout *string `yaml:"connect_timeout"`
-	StallTimeout   *string `yaml:"stall_timeout"`
+	Attempts                      *int    `yaml:"attempts"`
+	RetryDelay                    *string `yaml:"retry_delay"`
+	ConnectTimeout                *string `yaml:"connect_timeout"`
+	StallTimeout                  *string `yaml:"stall_timeout"`
+	MaxConsecutiveConnectFailures *int    `yaml:"max_consecutive_connect_failures"`
 }
 
 var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -83,19 +84,21 @@ func LoadConfig(path string) ([]Endpoint, error) {
 // global defaults; each endpoint then resolves its own overrides on top
 // of that.
 type retryPolicy struct {
-	attempts       int
-	retryDelay     time.Duration
-	connectTimeout time.Duration
-	stallTimeout   time.Duration
+	attempts                      int
+	retryDelay                    time.Duration
+	connectTimeout                time.Duration
+	stallTimeout                  time.Duration
+	maxConsecutiveConnectFailures int
 }
 
 // defaultPolicy is the built-in policy applied before any config values.
 func defaultPolicy() retryPolicy {
 	return retryPolicy{
-		attempts:       DefaultAttempts,
-		retryDelay:     DefaultRetryDelay,
-		connectTimeout: DefaultConnectTimeout,
-		stallTimeout:   DefaultStallTimeout,
+		attempts:                      DefaultAttempts,
+		retryDelay:                    DefaultRetryDelay,
+		connectTimeout:                DefaultConnectTimeout,
+		stallTimeout:                  DefaultStallTimeout,
+		maxConsecutiveConnectFailures: DefaultMaxConsecutiveConnectFailures,
 	}
 }
 
@@ -110,6 +113,14 @@ func resolvePolicy(raw rawPolicy, base retryPolicy, errPrefix string) (retryPoli
 		p.attempts = *raw.Attempts
 		if p.attempts < 1 {
 			errs = append(errs, fmt.Errorf("%sattempts: must be >= 1, got %d", errPrefix, p.attempts))
+		}
+	}
+	if raw.MaxConsecutiveConnectFailures != nil {
+		p.maxConsecutiveConnectFailures = *raw.MaxConsecutiveConnectFailures
+		if p.maxConsecutiveConnectFailures < 1 {
+			errs = append(errs, fmt.Errorf(
+				"%smax_consecutive_connect_failures: must be >= 1, got %d",
+				errPrefix, p.maxConsecutiveConnectFailures))
 		}
 	}
 
@@ -164,18 +175,19 @@ func buildEndpoint(
 	errs = append(errs, policyErrs...)
 
 	endpoint := Endpoint{
-		Name:           f.name,
-		Protocol:       protocol,
-		Host:           f.host,
-		Port:           re.Port,
-		Username:       f.username,
-		Password:       f.password,
-		PrivateKey:     privateKey,
-		Overwrite:      overwrite,
-		Attempts:       policy.attempts,
-		RetryDelay:     policy.retryDelay,
-		ConnectTimeout: policy.connectTimeout,
-		StallTimeout:   policy.stallTimeout,
+		Name:                          f.name,
+		Protocol:                      protocol,
+		Host:                          f.host,
+		Port:                          re.Port,
+		Username:                      f.username,
+		Password:                      f.password,
+		PrivateKey:                    privateKey,
+		Overwrite:                     overwrite,
+		Attempts:                      policy.attempts,
+		RetryDelay:                    policy.retryDelay,
+		ConnectTimeout:                policy.connectTimeout,
+		StallTimeout:                  policy.stallTimeout,
+		MaxConsecutiveConnectFailures: policy.maxConsecutiveConnectFailures,
 	}
 	return endpoint, errs
 }

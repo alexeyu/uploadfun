@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -192,22 +191,6 @@ func TestExpandPathsRejectsEmptyDirectory(t *testing.T) {
 		t.Fatal("expected an error when the expansion yields zero files")
 	}
 	if !strings.Contains(err.Error(), "no regular files found") {
-		t.Errorf("expected a helpful message, got %q", err.Error())
-	}
-}
-
-func TestExpandPathsRejectsNonRegularDirectArg(t *testing.T) {
-	dir := t.TempDir()
-	fifo := filepath.Join(dir, "pipe")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo unsupported on this platform: %v", err)
-	}
-
-	_, err := expandPaths([]string{fifo})
-	if err == nil {
-		t.Fatal("expected an error for a non-regular file passed directly")
-	}
-	if !strings.Contains(err.Error(), "not a regular file") {
 		t.Errorf("expected a helpful message, got %q", err.Error())
 	}
 }

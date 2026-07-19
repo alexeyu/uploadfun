@@ -663,12 +663,44 @@ func TestDispatchDryRunSuccess(t *testing.T) {
 		t.Errorf("expected Files to report %d planned uploads, got %d", len(files), dr.Files)
 	}
 
-	if f.uploadCalls != 0 || f.deleteCalls != 0 {
-		t.Errorf("expected no upload/delete calls during a dry run, got uploadCalls=%d deleteCalls=%d",
-			f.uploadCalls, f.deleteCalls)
+	if f.uploadCalls != 1 || f.deleteCalls != 1 {
+		t.Errorf(
+			"expected exactly 1 upload/delete for the write probe, got uploadCalls=%d deleteCalls=%d",
+			f.uploadCalls,
+			f.deleteCalls,
+		)
 	}
 	if f.disconnectCalls != 1 {
 		t.Errorf("expected exactly 1 disconnect, got %d", f.disconnectCalls)
+	}
+}
+
+func TestDispatchDryRunWriteProbeFailure(t *testing.T) {
+	f := &fakeUploader{failUploadN: 999}
+	withFakeUploader(t, f)
+
+	events := collectEvents(Upload(
+		context.Background(), []string{"a.jpg"}, []Endpoint{testEndpoint("ep1")}, Options{DryRun: true},
+	))
+
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 event, got %d: %+v", len(events), events)
+	}
+	dr, ok := events[0].(DryRunEvent)
+	if !ok {
+		t.Fatalf("expected a DryRunEvent, got %T", events[0])
+	}
+	if dr.Err == nil {
+		t.Error("expected a write-probe error")
+	}
+	if dr.Files != 0 {
+		t.Errorf("expected Files=0 when the write probe fails, got %d", dr.Files)
+	}
+	if f.deleteCalls != 0 {
+		t.Errorf("expected no delete after a failed probe upload, got %d", f.deleteCalls)
+	}
+	if f.disconnectCalls != 1 {
+		t.Errorf("expected exactly 1 disconnect after a probe failure, got %d", f.disconnectCalls)
 	}
 }
 

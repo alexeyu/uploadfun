@@ -56,8 +56,9 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 		"print the full event stream, including byte-level progress")
 	fs.BoolVar(&opts.json, "json", false, "format output as newline-delimited JSON")
 	fs.BoolVar(&opts.dryRun, "dry-run", false,
-		"connect and authenticate to each endpoint and report how many files "+
-			"would upload; no transfer, no delete, no writes")
+		"connect to each endpoint, verify the target is writable via a "+
+			"self-deleting probe file, and report how many files would upload; "+
+			"never touches the actual files being sent")
 	fs.BoolVar(&opts.noVerify, "no-verify", false, "disable post-upload size/hash verification")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	fs.Usage = func() {

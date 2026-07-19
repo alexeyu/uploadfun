@@ -234,3 +234,53 @@ func TestIntegrationSFTPPermissionDeniedGivesUpEndToEnd(t *testing.T) {
 		t.Errorf("expected the second file to be reported skipped, got %+v", givenUp.SkippedFiles)
 	}
 }
+
+// TestIntegrationDryRunWriteProbeEndToEnd proves the --dry-run write probe
+// against real servers: it succeeds on the writable FTPS target and, on the
+// SFTP endpoint whose chroot root is unwritable, catches the exact
+// permission problem TestIntegrationSFTPPermissionDeniedGivesUpEndToEnd
+// shows a real run only discovers mid-transfer - which is the whole point
+// of preflighting writability.
+func TestIntegrationDryRunWriteProbeEndToEnd(t *testing.T) {
+	t.Run("passes on a writable endpoint", func(t *testing.T) {
+		endpoints, err := LoadConfig(rootFTPSConfig(t, "true"))
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+
+		events := collectEvents(Upload(
+			context.Background(), []string{"a.jpg", "b.jpg"}, endpoints, Options{DryRun: true},
+		))
+
+		dr := singleDryRunEvent(t, events)
+		if dr.Err != nil {
+			t.Errorf("expected the write probe to pass on a writable endpoint, got %v", dr.Err)
+		}
+		if dr.Files != 2 {
+			t.Errorf("expected Files=2, got %d", dr.Files)
+		}
+	})
+
+	t.Run("fails on an unwritable target", func(t *testing.T) {
+		events := collectEvents(Upload(
+			context.Background(), []string{"a.jpg"}, []Endpoint{rootSFTPEndpoint()}, Options{DryRun: true},
+		))
+
+		dr := singleDryRunEvent(t, events)
+		if dr.Err == nil {
+			t.Error("expected the write probe to fail on an unwritable target")
+		}
+	})
+}
+
+func singleDryRunEvent(t *testing.T, events []UploadEvent) DryRunEvent {
+	t.Helper()
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 event for a dry run, got %d: %+v", len(events), events)
+	}
+	dr, ok := events[0].(DryRunEvent)
+	if !ok {
+		t.Fatalf("expected a DryRunEvent, got %T", events[0])
+	}
+	return dr
+}

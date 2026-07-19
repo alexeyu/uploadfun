@@ -2,6 +2,7 @@ package uploadfun
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -295,8 +296,9 @@ func (w *endpointWorker) sleepBeforeRetry(attempt int) {
 }
 
 // runDryRun performs the --dry-run preflight for one endpoint: connect and
-// authenticate to prove the endpoint is reachable, disconnect, and report
-// how many files a real run would upload - never touching any file.
+// authenticate, prove the target directory is writable by round-tripping a
+// throwaway probe file, then report how many files a real run would upload -
+// never touching the actual files being sent.
 func runDryRun(
 	ctx context.Context,
 	up uploader,
@@ -311,8 +313,58 @@ func runDryRun(
 		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
 		return
 	}
-	_ = up.Disconnect(ctx)
+	defer func() { _ = up.Disconnect(ctx) }()
+
+	if err := probeWritable(ctx, up); err != nil {
+		events <- DryRunEvent{Endpoint: ep.Name, Err: err}
+		return
+	}
 	events <- DryRunEvent{Endpoint: ep.Name, Files: len(files)}
+}
+
+// probeWritable proves the endpoint's target directory accepts writes by
+// uploading a tiny uniquely-named file and deleting it. This is the one
+// deliberate remote mutation a dry run makes; the probe exists on the
+// server only between its upload and its delete.
+func probeWritable(ctx context.Context, up uploader) error {
+	local, err := newProbeFile()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(local) }()
+
+	remote := probeRemoteName()
+	if err := up.Upload(ctx, local, remote, func(sent, total int64) {}); err != nil {
+		return fmt.Errorf("write probe: %w", err)
+	}
+	if err := up.Delete(ctx, remote); err != nil {
+		return fmt.Errorf("write probe cleanup: left %q on server: %w", remote, err)
+	}
+	return nil
+}
+
+// newProbeFile writes a throwaway local file for the write probe and
+// returns its path; the caller removes it.
+func newProbeFile() (string, error) {
+	f, err := os.CreateTemp("", "uploadfun-probe-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString("uploadfun dry-run write probe\n"); err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// probeRemoteName returns a collision-resistant name so the probe never
+// clashes with a real upload or a concurrent endpoint's probe. It avoids a
+// leading dot on purpose - servers like pure-ftpd reject dotfile writes.
+func probeRemoteName() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("uploadfun-probe-%x.tmp", b)
 }
 
 func failAllFiles(ep Endpoint, files []string, err error, events chan<- UploadEvent) {

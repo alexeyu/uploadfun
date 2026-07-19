@@ -122,7 +122,11 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 			p.write(p.stderr, e, fmt.Sprintf("[%s] dry-run failed: %s", e.Endpoint, e.Err))
 			return
 		}
-		msg := fmt.Sprintf("[%s] dry-run ok: would upload %d files", e.Endpoint, e.Files)
+		msg := fmt.Sprintf(
+			"[%s] dry-run ok: reachable and writable, would upload %d files",
+			e.Endpoint,
+			e.Files,
+		)
 		p.writeUnlessQuiet(e, msg)
 	}
 }

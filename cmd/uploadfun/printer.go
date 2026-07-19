@@ -96,6 +96,7 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		if e.VerifyMethod != "" {
 			msg += fmt.Sprintf(" (verified: %s)", e.VerifyMethod)
 		}
+		msg += fmt.Sprintf(" in %s", formatSeconds(e.Elapsed))
 		p.writeUnlessQuiet(e, msg)
 	case uploadfun.FileErrorEvent:
 		msg := fmt.Sprintf("[%s] %s: attempt %d failed: %s", e.Endpoint, e.File, e.Attempt, e.Reason)
@@ -113,7 +114,8 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		)
 		p.write(p.stderr, e, msg)
 	case uploadfun.EndpointDoneEvent:
-		msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed", e.Endpoint, e.Succeeded, e.Failed)
+		msg := fmt.Sprintf("[%s] done: %d succeeded, %d failed in %s",
+			e.Endpoint, e.Succeeded, e.Failed, formatSeconds(e.Elapsed))
 		p.writeUnlessQuiet(e, msg)
 	case uploadfun.DryRunEvent:
 		if e.Err != nil {
@@ -123,6 +125,12 @@ func (p *printer) handle(ev uploadfun.UploadEvent) {
 		msg := fmt.Sprintf("[%s] dry-run ok: would upload %d files", e.Endpoint, e.Files)
 		p.writeUnlessQuiet(e, msg)
 	}
+}
+
+// formatSeconds renders an event's timing as seconds with two decimals -
+// friendlier than raw milliseconds for a per-file or per-endpoint time.
+func formatSeconds(d uploadfun.Duration) string {
+	return fmt.Sprintf("%.2fs", time.Duration(d).Seconds())
 }
 
 // progressKey identifies one (endpoint,file) pair's progress-throttle state.

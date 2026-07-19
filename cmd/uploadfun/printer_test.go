@@ -14,11 +14,16 @@ import (
 func syntheticEvents() []uploadfun.UploadEvent {
 	return []uploadfun.UploadEvent{
 		uploadfun.ProgressEvent{Endpoint: "ep1", File: "a.jpg", BytesSent: 50, TotalBytes: 100},
-		uploadfun.FileSuccessEvent{Endpoint: "ep1", File: "a.jpg", VerifyMethod: "size"},
+		uploadfun.FileSuccessEvent{
+			Endpoint: "ep1", File: "a.jpg", VerifyMethod: "size",
+			Elapsed: uploadfun.Duration(1234 * time.Millisecond),
+		},
 		uploadfun.FileErrorEvent{
 			Endpoint: "ep2", File: "b.jpg", Attempt: 1, Reason: "boom", Err: errors.New("boom"),
 		},
-		uploadfun.EndpointDoneEvent{Endpoint: "ep1", Succeeded: 1, Failed: 0},
+		uploadfun.EndpointDoneEvent{
+			Endpoint: "ep1", Succeeded: 1, Failed: 0, Elapsed: uploadfun.Duration(2500 * time.Millisecond),
+		},
 		uploadfun.EndpointDoneEvent{Endpoint: "ep2", Succeeded: 0, Failed: 1},
 	}
 }
@@ -77,6 +82,39 @@ func TestPrinterDefaultModeOmitsProgress(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "uploaded") {
 		t.Errorf("expected file success line in default mode, got %q", stdout)
+	}
+}
+
+func TestPrinterShowsTimings(t *testing.T) {
+	stdout, _, _ := runPrinter(modeDefault, false)
+	if !strings.Contains(stdout, "uploaded (verified: size) in 1.23s") {
+		t.Errorf("expected per-file timing in success line, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "done: 1 succeeded, 0 failed in 2.50s") {
+		t.Errorf("expected per-endpoint timing in done line, got %q", stdout)
+	}
+}
+
+func TestPrinterTimingsJSON(t *testing.T) {
+	stdout, _, _ := runPrinter(modeDefault, true)
+
+	// Key by "type|endpoint" so the two endpoint_done events don't collide.
+	durations := map[string]float64{}
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(line), &payload); err != nil {
+			t.Fatalf("invalid JSON line %q: %v", line, err)
+		}
+		if sec, ok := payload["durationSec"]; ok {
+			durations[payload["type"].(string)+"|"+payload["endpoint"].(string)] = sec.(float64)
+		}
+	}
+
+	if got := durations["file_success|ep1"]; got != 1.23 {
+		t.Errorf("expected file_success durationSec=1.23, got %v", got)
+	}
+	if got := durations["endpoint_done|ep1"]; got != 2.5 {
+		t.Errorf("expected endpoint_done durationSec=2.5, got %v", got)
 	}
 }
 

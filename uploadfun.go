@@ -2,6 +2,7 @@ package uploadfun
 
 import (
 	"context"
+	"strconv"
 	"time"
 )
 
@@ -90,6 +91,16 @@ type UploadEvent interface {
 	uploadEvent()
 }
 
+// Duration wraps time.Duration so an event's timing field serializes to
+// JSON as a seconds number rounded to two decimals - matching the text
+// output and friendlier than the raw nanosecond count a plain time.Duration
+// would marshal to.
+type Duration time.Duration
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return strconv.AppendFloat(nil, time.Duration(d).Seconds(), 'f', 2, 64), nil
+}
+
 // FileStartEvent reports that an endpoint worker is about to attempt one
 // file - emitted once per attempt, before delete/upload/verify, so
 // consumers know a (possibly long) transfer is underway before the first
@@ -122,6 +133,10 @@ type FileSuccessEvent struct {
 	// VerifyMethod describes what verification was performed ("size",
 	// "size+hash"), or "" if disabled (NoVerify).
 	VerifyMethod string `json:"verifyMethod,omitempty"`
+	// Elapsed is the wall-clock time of the successful attempt's work -
+	// delete (if any), upload, and verification - excluding earlier failed
+	// attempts and their retry backoff.
+	Elapsed Duration `json:"durationSec"`
 }
 
 func (FileSuccessEvent) uploadEvent() {}
@@ -171,6 +186,9 @@ type EndpointDoneEvent struct {
 	Endpoint  string `json:"endpoint"`
 	Succeeded int    `json:"succeeded"`
 	Failed    int    `json:"failed"`
+	// Elapsed is the endpoint worker's total wall-clock time across the
+	// whole batch, including connects, retries, and backoff.
+	Elapsed Duration `json:"durationSec"`
 }
 
 func (EndpointDoneEvent) uploadEvent() {}

@@ -86,6 +86,7 @@ type endpointWorker struct {
 func (w *endpointWorker) run(files []string) {
 	defer w.disconnect()
 
+	start := time.Now()
 	succeeded, failed := 0, 0
 	for i, file := range files {
 		if w.ctx.Err() != nil {
@@ -109,7 +110,9 @@ func (w *endpointWorker) run(files []string) {
 		}
 	}
 
-	w.events <- EndpointDoneEvent{Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed}
+	w.events <- EndpointDoneEvent{
+		Endpoint: w.ep.Name, Succeeded: succeeded, Failed: failed, Elapsed: Duration(time.Since(start)),
+	}
 }
 
 // circuitOpen reports whether consecutiveConnectFailures has reached
@@ -167,6 +170,7 @@ func (w *endpointWorker) uploadFile(file string) bool {
 		}
 
 		w.events <- FileStartEvent{Endpoint: w.ep.Name, File: file, Attempt: attempt}
+		start := time.Now()
 		method, err := w.transfer(file, remoteName)
 		if err != nil {
 			w.events <- FileErrorEvent{
@@ -181,7 +185,9 @@ func (w *endpointWorker) uploadFile(file string) bool {
 			continue
 		}
 
-		w.events <- FileSuccessEvent{Endpoint: w.ep.Name, File: file, VerifyMethod: method}
+		w.events <- FileSuccessEvent{
+			Endpoint: w.ep.Name, File: file, VerifyMethod: method, Elapsed: Duration(time.Since(start)),
+		}
 		return true
 	}
 	return false

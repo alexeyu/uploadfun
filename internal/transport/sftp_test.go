@@ -154,9 +154,17 @@ func TestSFTPAuthMethodsPrecedence(t *testing.T) {
 	})
 }
 
+// setHome points os.UserHomeDir at dir on the current platform: it reads
+// HOME on unix but USERPROFILE on Windows, so set both.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 func TestKnownHostsCallback(t *testing.T) {
 	t.Run("missing known_hosts is an error", func(t *testing.T) {
-		t.Setenv("HOME", t.TempDir())
+		setHome(t, t.TempDir())
 		if _, err := knownHostsCallback(); err == nil {
 			t.Error("expected an error when known_hosts doesn't exist")
 		}
@@ -170,7 +178,7 @@ func TestKnownHostsCallback(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(home, ".ssh", "known_hosts"), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("HOME", home)
+		setHome(t, home)
 
 		callback, err := knownHostsCallback()
 		if err != nil {

@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseArgsRequiresConfig(t *testing.T) {
@@ -88,6 +90,23 @@ func TestParseArgsInterleavedPathsAndFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgsDoubleDashTakesRestLiterally(t *testing.T) {
+	// Everything after "--" is a path, even if it looks like a flag, so
+	// filenames beginning with "-" can be uploaded.
+	var stdout, stderr bytes.Buffer
+	opts, code := parseArgs(
+		[]string{"--config", "x.yaml", "a.jpg", "--", "-weird.jpg", "--also-weird"},
+		&stdout, &stderr,
+	)
+	if opts == nil {
+		t.Fatalf("expected valid opts (code=%d, stderr=%q)", code, stderr.String())
+	}
+	want := []string{"a.jpg", "-weird.jpg", "--also-weird"}
+	if !slices.Equal(opts.paths, want) {
+		t.Errorf("expected paths %v, got %v", want, opts.paths)
+	}
+}
+
 func TestParseArgsDryRunAndNoVerify(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	opts, code := parseArgs(
@@ -98,6 +117,34 @@ func TestParseArgsDryRunAndNoVerify(t *testing.T) {
 	}
 	if !opts.dryRun || !opts.noVerify {
 		t.Errorf("expected dryRun and noVerify both set, got %+v", opts)
+	}
+}
+
+func TestHandleSignalsCancelsThenHardExits(t *testing.T) {
+	sigCh := make(chan os.Signal, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	exited := make(chan int, 1)
+	go handleSignals(sigCh, cancel, func(code int) { exited <- code })
+
+	// First signal cancels the context.
+	sigCh <- os.Interrupt
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("first signal did not cancel the context")
+	}
+
+	// Second signal forces the hard exit.
+	sigCh <- os.Interrupt
+	select {
+	case code := <-exited:
+		if code != exitSignalAbort {
+			t.Errorf("expected exit code %d, got %d", exitSignalAbort, code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second signal did not trigger exit")
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -21,15 +23,56 @@ const (
 	exitPartialFailure = 1
 	exitConfigError    = 2
 	exitUsageError     = 3
+	// exitSignalAbort is returned when a second interrupt forces an
+	// immediate stop; 128+SIGINT is the conventional shell code for it.
+	exitSignalAbort = 130
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
+// version is overridden at build time via -ldflags "-X main.version=..."
+// (Makefile, GoReleaser). resolveVersion falls back to the module version
+// when it wasn't, so `go install ...@v1.2.3` still reports the tag.
 var version = "dev"
 
+// resolveVersion reports the version with any leading "v" trimmed, so the
+// GoReleaser (0.1.0), Makefile, and `go install` (both v0.1.0) build paths
+// all print it identically.
+func resolveVersion() string {
+	return strings.TrimPrefix(rawVersion(), "v")
+}
+
+// rawVersion returns the ldflags-injected version if set, else the version
+// Go embeds in build info for `go install pkg@vX.Y.Z` builds, else "dev"
+// for a plain local build.
+func rawVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
+}
+
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go handleSignals(sigCh, cancel, os.Exit)
+
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// handleSignals cancels ctx on the first interrupt/termination signal so the
+// run stops gracefully - no new transfers or retries, results still reported.
+// A second signal hard-exits: an in-flight blocking transfer otherwise runs
+// to completion, so this is the user's escape hatch from a stuck upload.
+func handleSignals(sigCh <-chan os.Signal, cancel context.CancelFunc, exit func(int)) {
+	<-sigCh
+	cancel()
+	<-sigCh
+	exit(exitSignalAbort)
 }
 
 type cliOptions struct {
@@ -75,7 +118,7 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 	}
 
 	if opts.version {
-		_, _ = fmt.Fprintln(stdout, "uploadfun", version)
+		_, _ = fmt.Fprintln(stdout, "uploadfun", resolveVersion())
 		return nil, exitOK
 	}
 
@@ -102,21 +145,31 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*cliOptions, int) {
 
 // parseInterleaved runs fs.Parse repeatedly so flags and positionals may
 // appear in any order - stdlib flag otherwise stops at the first
-// positional. Returns the collected positionals, or the first error.
+// positional. Everything after the first "--" is taken literally, so
+// filenames beginning with "-" can be uploaded (e.g. `--config c.yml --
+// -weird.jpg`); the re-parse loop would otherwise re-interpret them as
+// flags. Returns the collected positionals, or the first error.
 func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
+	var trailing []string
+	if i := slices.Index(args, "--"); i >= 0 {
+		trailing = args[i+1:]
+		args = args[:i]
+	}
+
 	var positionals []string
 	rest := args
-	for {
+	for len(rest) > 0 {
 		if err := fs.Parse(rest); err != nil {
 			return nil, err
 		}
 		rest = fs.Args()
 		if len(rest) == 0 {
-			return positionals, nil
+			break
 		}
 		positionals = append(positionals, rest[0])
 		rest = rest[1:]
 	}
+	return append(positionals, trailing...), nil
 }
 
 // expandPaths turns positional file/dir arguments into a flat file list:

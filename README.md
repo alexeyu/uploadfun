@@ -236,7 +236,8 @@ $ uploadfun ./batch --config stocks.yml --json
   once with `ssh` (or `ssh-keyscan`) to record the key first.
 - **Cancellation.** Ctrl-C / SIGTERM cancels cleanly: workers stop starting new
   transfers and retries promptly, though an in-flight blocking transfer runs to
-  completion first. Each endpoint still reports its results.
+  completion first. Each endpoint still reports its results. A second Ctrl-C
+  exits immediately (code 130) rather than waiting out a stuck transfer.
 
 ## Use as a Go library
 

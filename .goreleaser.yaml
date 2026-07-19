@@ -1,0 +1,96 @@
+# GoReleaser config - cross-platform binaries + Homebrew tap on every tag.
+# Validate locally with `goreleaser check`; dry-run a build with
+# `goreleaser release --snapshot --clean`.
+version: 2
+
+project_name: uploadfun
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: uploadfun
+    main: ./cmd/uploadfun
+    binary: uploadfun
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - config.yml.example
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+
+# Publishes a cask to github.com/alexeyu/homebrew-tap so users can
+# `brew install alexeyu/tap/uploadfun`. Needs a HOMEBREW_TAP_GITHUB_TOKEN
+# secret with write access to that repo (see README "Releasing"). If the
+# token is absent the release still succeeds - only the cask push is
+# skipped.
+homebrew_casks:
+  - name: uploadfun
+    repository:
+      owner: alexeyu
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/alexeyu/uploadfun"
+    description: "Concurrent fan-out file uploader for FTP/FTPS/SFTP endpoints"
+    license: MIT
+    skip_upload: auto
+    binaries:
+      - uploadfun
+    commit_author:
+      name: goreleaser-bot
+      email: goreleaser@users.noreply.github.com
+    # The binaries are unsigned, so strip the Gatekeeper quarantine flag on
+    # install or macOS refuses to run them ("developer cannot be verified").
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/uploadfun"]
+          end
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ---
+    Pre-1.0: the config schema and Go library API may still change between
+    minor versions. See the README for the current stability note.

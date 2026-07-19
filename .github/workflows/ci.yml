@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -18,10 +22,14 @@ jobs:
           go-version-file: go.mod
       - run: go build ./...
       - name: go.mod is tidy
+        if: matrix.os == 'ubuntu-latest'
         run: go mod tidy -diff
       - run: go vet ./...
       - run: go test ./... -race
+      # Integration tests spin up Docker containers, which the GitHub-hosted
+      # Windows runners don't provide - keep them Linux-only.
       - name: Integration tests (real FTP/FTPS/SFTP servers via Docker)
+        if: matrix.os == 'ubuntu-latest'
         run: go test -tags integration ./... -v
 
   lint:

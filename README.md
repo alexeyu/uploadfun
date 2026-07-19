@@ -7,8 +7,7 @@
 A headless, config-driven uploader that fans one batch of files out to many
 FTP, FTPS, and SFTP endpoints at once, concurrently, with retries and
 post-upload verification. Built for unattended automation (cron, CI,
-folder-watchers), not interactive use: no prompts, no GUI, a single static
-binary and one YAML file.
+folder-watchers), not interactive use. A single static binary and one YAML file.
 
 You point it at some files and a list of endpoints; it uploads every file to
 every endpoint in parallel, verifies each transfer, retries transient
@@ -71,23 +70,9 @@ amd64 and arm64 are built for every release; each archive is listed in
 
 ## Quick start
 
-1. Write a config (`stocks.yml`). Start from
-   [`config.yml.example`](config.yml.example):
-
-   ```yaml
-   endpoints:
-     - name: shutterstock
-       protocol: ftps
-       host: ftp.shutterstock.com
-       username: myuser
-       password: ${SHUTTERSTOCK_FTP_PASSWORD}
-
-     - name: dreamstime
-       protocol: sftp
-       host: sftp.dreamstime.com
-       username: myuser
-       private_key: ~/.ssh/id_ed25519
-   ```
+1. Write a config (`stocks.yml`) listing your endpoints. Start from
+   [`config.yml.example`](config.yml.example), or see
+   [Configuration](#configuration) below for the full field reference.
 
 2. Preflight it before you trust it to a cron job:
 
@@ -107,7 +92,7 @@ amd64 and arm64 are built for every release; each archive is listed in
 Positional arguments may be files or directories, mixed freely. Directories
 expand **non-recursively**: every regular file is included; subdirectories and
 dotfiles are skipped. Two inputs that would land under the same remote name
-(same basename) are rejected up front rather than silently clobbering.
+(same basename) are rejected up front.
 
 ## Configuration
 
